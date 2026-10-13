@@ -93,6 +93,12 @@ class DatabaseManager:
             conn.executescript(SCHEMA_SQL)
             conn.commit()
 
+    def get_connection(self) -> sqlite3.Connection:
+        """Returns a synchronous SQLite connection."""
+        return sqlite3.connect(self.db_path)
+
+    init_sync = init_schema_sync
+
     async def init_schema_async(self) -> None:
         """Asynchronously initializes database tables and indexes."""
         async with aiosqlite.connect(self.db_path) as db:

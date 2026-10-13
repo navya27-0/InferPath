@@ -70,8 +70,7 @@ class FreshnessClassifier:
             if rhetorical.search(prompt):
                 # If there are no other overt live-data patterns (like weather, stock price, breaking news, what time is it)
                 has_overt_live = any(
-                    p.search(prompt)
-                    for p in TEMPORAL_PATTERNS[0:1] + TEMPORAL_PATTERNS[4:7]
+                    p.search(prompt) for p in TEMPORAL_PATTERNS[0:1] + TEMPORAL_PATTERNS[4:7]
                 )
                 if not has_overt_live:
                     return False, None

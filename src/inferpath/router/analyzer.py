@@ -42,23 +42,41 @@ class RequestAnalysis(BaseModel):
 
 # Sensitive tokens that trigger conservative privacy upgrade if found in prompt
 SENSITIVE_CONTENT_PATTERNS = [
-    re.compile(r"\b(password|passwd|api[_\s]?key|secret[_\s]?key|private[_\s]?key|bearer\s+[a-zA-Z0-9_\-\.]+)\b", re.IGNORECASE),
-    re.compile(r"\b(ssn|social security number|credit card|cvv|confidential internal|strictly confidential)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(password|passwd|api[_\s]?key|secret[_\s]?key|private[_\s]?key|bearer\s+[a-zA-Z0-9_\-\.]+)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(ssn|social security number|credit card|cvv|confidential internal|strictly confidential)\b",
+        re.IGNORECASE,
+    ),
 ]
 
 # Template intent keywords
 TEMPLATE_TRIGGERS: dict[str, list[re.Pattern]] = {
     "leave_application": [
-        re.compile(r"\b(leave application|apply for leave|sick leave letter|vacation leave request|annual leave request)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(leave application|apply for leave|sick leave letter|vacation leave request|annual leave request)\b",
+            re.IGNORECASE,
+        ),
     ],
     "formal_email": [
-        re.compile(r"\b(formal email|draft (?:a )?formal email|professional email|business email)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(formal email|draft (?:a )?formal email|professional email|business email)\b",
+            re.IGNORECASE,
+        ),
     ],
     "meeting_minutes": [
-        re.compile(r"\b(meeting minutes|minutes of (?:the )?meeting|meeting notes template|formal meeting minutes)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(meeting minutes|minutes of (?:the )?meeting|meeting notes template|formal meeting minutes)\b",
+            re.IGNORECASE,
+        ),
     ],
     "cover_letter": [
-        re.compile(r"\b(cover letter|job application letter|cover letter for (?:the )?position)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(cover letter|job application letter|cover letter for (?:the )?position)\b",
+            re.IGNORECASE,
+        ),
     ],
 }
 
@@ -76,9 +94,7 @@ class RequestAnalyzer:
 
     def __init__(self, routing_settings: RoutingSettings | None = None):
         self.settings = routing_settings or RoutingSettings()
-        self.complexity_keywords = [
-            k.lower() for k in self.settings.complexity_keywords
-        ]
+        self.complexity_keywords = [k.lower() for k in self.settings.complexity_keywords]
 
     def analyze(self, request: UserRequest) -> RequestAnalysis:
         prompt = request.prompt.strip()
@@ -194,7 +210,11 @@ class RequestAnalyzer:
             )
 
         # 7. Check Ambiguity / Empty prompt
-        if not prompt or len(prompt.split()) <= 2 and prompt.lower() in {"help", "hi", "do it", "convert", "calculate", "write"}:
+        if (
+            not prompt
+            or len(prompt.split()) <= 2
+            and prompt.lower() in {"help", "hi", "do it", "convert", "calculate", "write"}
+        ):
             return RequestAnalysis(
                 task_intent="ambiguous_query",
                 task_family=TaskType.UNKNOWN,
@@ -263,14 +283,10 @@ class RequestAnalyzer:
 
         return request.privacy_class
 
-    def _determine_freshness(
-        self, request: UserRequest, prompt: str
-    ) -> tuple[bool, str | None]:
+    def _determine_freshness(self, request: UserRequest, prompt: str) -> tuple[bool, str | None]:
         if request.is_time_sensitive is not None:
             return request.is_time_sensitive, (
-                "Explicit user freshness metadata override"
-                if request.is_time_sensitive
-                else None
+                "Explicit user freshness metadata override" if request.is_time_sensitive else None
             )
         return FreshnessClassifier.is_time_sensitive(prompt)
 
@@ -355,7 +371,11 @@ class RequestAnalyzer:
 
     def _is_json_validation(self, prompt: str, metadata: dict[str, Any]) -> bool:
         lower = prompt.lower()
-        if "validate json" in lower or "check if json is valid" in lower or "validate schema" in lower:
+        if (
+            "validate json" in lower
+            or "check if json is valid" in lower
+            or "validate schema" in lower
+        ):
             return True
         return bool("schema" in metadata and ("{" in prompt or "[" in prompt))
 

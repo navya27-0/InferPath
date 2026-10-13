@@ -101,7 +101,9 @@ class DateFormatter:
         try:
             return parsed_date.strftime(strftime_fmt)
         except Exception as err:
-            raise DateFormattingError(f"Failed to format date with pattern '{target_format}': {err}") from err
+            raise DateFormattingError(
+                f"Failed to format date with pattern '{target_format}': {err}"
+            ) from err
 
     @classmethod
     def execute_handler(cls, prompt: str) -> HandlerOutput:
@@ -125,9 +127,7 @@ class DateFormatter:
             output_tokens=ProvenanceValue(
                 value=0, provenance=ProvenanceLabel.MEASURED, unit="tokens"
             ),
-            latency_ms=ProvenanceValue(
-                value=0.5, provenance=ProvenanceLabel.MEASURED, unit="ms"
-            ),
+            latency_ms=ProvenanceValue(value=0.5, provenance=ProvenanceLabel.MEASURED, unit="ms"),
             model_version="deterministic_date_formatter_v1",
             raw_response={
                 "input_date": date_input,

@@ -77,7 +77,9 @@ class TestTemplateHandlers:
 
     def test_meeting_minutes_complete_and_missing(self, engine):
         # Missing fields
-        out_missing = engine.execute_handler("meeting_minutes", {"meeting_title": "Sprint Planning"})
+        out_missing = engine.execute_handler(
+            "meeting_minutes", {"meeting_title": "Sprint Planning"}
+        )
         assert out_missing.needs_clarification is True
         assert "date" in out_missing.clarification_request.missing_fields
         assert "attendees" in out_missing.clarification_request.missing_fields

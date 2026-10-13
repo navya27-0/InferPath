@@ -22,6 +22,7 @@ routing:
   thresholds:
     confidence_threshold: 0.80
     q_min: 0.70
+  max_usd_per_run: 0.10
   complexity_keywords:
     - "compare"
     - "synthesize"

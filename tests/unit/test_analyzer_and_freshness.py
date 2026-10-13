@@ -1,6 +1,5 @@
 """Unit tests for RequestAnalyzer and FreshnessClassifier safeguards."""
 
-
 from inferpath.cache.freshness import FreshnessClassifier
 from inferpath.models.domain import UserRequest
 from inferpath.models.enums import PrivacyClass, RouteTier, TaskType
@@ -78,7 +77,9 @@ def test_analyzer_task_intent_extraction():
     assert res_unit.suitable_tier == RouteTier.DETERMINISTIC_A
 
     # Template
-    req_tpl = UserRequest(request_id="t1", prompt="Draft a formal email to John regarding project kickoff")
+    req_tpl = UserRequest(
+        request_id="t1", prompt="Draft a formal email to John regarding project kickoff"
+    )
     res_tpl = analyzer.analyze(req_tpl)
     assert res_tpl.task_intent == "template_formal_email"
     assert res_tpl.suitable_tier == RouteTier.TEMPLATE_B

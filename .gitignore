@@ -50,6 +50,8 @@ htmlcov/
 *.sqlite3
 *.db-journal
 data/storage/*.db
+data/logs/*.jsonl
+!data/logs/.gitkeep
 
 # IDE and OS
 .vscode/

@@ -100,12 +100,19 @@ class MockSmallModel(BaseMockModel):
     Operates strictly offline without network access or API keys.
     """
 
-    def __init__(self, price_table_date: str = "2026-10-01"):
+    def __init__(
+        self,
+        model_id: str = "mock-small",
+        prompt_price_per_1m: float = 0.05,
+        completion_price_per_1m: float = 0.20,
+        simulated_base_latency_ms: float = 35.0,
+        price_table_date: str = "2026-10-01",
+    ):
         super().__init__(
-            model_id="mock-small",
-            prompt_price_per_1m=0.05,
-            completion_price_per_1m=0.20,
-            simulated_base_latency_ms=35.0,
+            model_id=model_id,
+            prompt_price_per_1m=prompt_price_per_1m,
+            completion_price_per_1m=completion_price_per_1m,
+            simulated_base_latency_ms=simulated_base_latency_ms,
             price_table_date=price_table_date,
         )
 
@@ -117,12 +124,19 @@ class MockLargeModel(BaseMockModel):
     Operates strictly offline without network access or API keys.
     """
 
-    def __init__(self, price_table_date: str = "2026-10-01"):
+    def __init__(
+        self,
+        model_id: str = "mock-large",
+        prompt_price_per_1m: float = 2.50,
+        completion_price_per_1m: float = 10.00,
+        simulated_base_latency_ms: float = 110.0,
+        price_table_date: str = "2026-10-01",
+    ):
         super().__init__(
-            model_id="mock-large",
-            prompt_price_per_1m=2.50,
-            completion_price_per_1m=10.00,
-            simulated_base_latency_ms=110.0,
+            model_id=model_id,
+            prompt_price_per_1m=prompt_price_per_1m,
+            completion_price_per_1m=completion_price_per_1m,
+            simulated_base_latency_ms=simulated_base_latency_ms,
             price_table_date=price_table_date,
         )
 

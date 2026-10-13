@@ -107,6 +107,8 @@ class ExactCache:
                 # Malformed payload handled safely without raising unhandled exception
                 return None
 
+    get = lookup
+
     async def lookup_async(self, cache_key: str) -> HandlerOutput | None:
         """
         Asynchronously retrieves a cached response by exact key.
@@ -215,6 +217,26 @@ class ExactCache:
                 return True
             except Exception:
                 return False
+
+    def set(
+        self,
+        cache_key: str,
+        output: HandlerOutput,
+        ttl_seconds: int = 86400,
+        request: UserRequest | None = None,
+        route: RouteTier | str | None = None,
+        **kwargs: Any,
+    ) -> bool:
+        """Alias for store matching key-value cache conventions."""
+        req = request or UserRequest(request_id=f"cache_{cache_key[:8]}", prompt=output.output_text)
+        rt = route or output.tier
+        return self.store(
+            cache_key=cache_key,
+            request=req,
+            output=output,
+            route=rt,
+            ttl_seconds=ttl_seconds,
+        )
 
     async def store_async(
         self,

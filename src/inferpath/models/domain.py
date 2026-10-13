@@ -146,6 +146,8 @@ class ValidationResult(BaseModel):
 
     is_valid: bool
     rejection_reason: str | None = None
+    validator_name: str | None = None
+    failure_code: str | None = None
     fallback_recommended: bool = False
     next_recommended_tier: RouteTier | None = None
 
@@ -169,9 +171,12 @@ class PipelineResult(BaseModel):
     clarification_prompt: str | None = None
     initial_tier: RouteTier
     final_tier: RouteTier
+    rule_id: str | None = None
     was_cached: bool = False
+    validation_passed: bool = True
     fallback_occurred: bool = False
     fallback_history: list[FallbackRecord] = Field(default_factory=list)
+    route_trace: list[dict[str, Any]] = Field(default_factory=list)
     total_latency_ms: ProvenanceValue[float]
     cost_usd: ProvenanceValue[float]
     energy_wh: ProvenanceValue[float]

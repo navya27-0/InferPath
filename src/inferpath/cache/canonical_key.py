@@ -49,27 +49,34 @@ class CanonicalKeyBuilder:
     @classmethod
     def build_cache_key(
         cls,
-        prompt: str,
-        task_parameters: TaskParameters | dict[str, Any] | None,
+        prompt: str | None = None,
+        task_parameters: TaskParameters | dict[str, Any] | None = None,
         context_hash: str | None = None,
         user_scope: str = "default",
         route: RouteTier | str = "",
         handler_version: str = "v1",
         template_version: str | None = None,
         privacy_class: PrivacyClass | str = PrivacyClass.PUBLIC,
+        *,
+        normalized_prompt: str | None = None,
+        selected_route: RouteTier | str | None = None,
     ) -> str:
         """Computes the deterministic SHA-256 cache key hex digest."""
+        effective_prompt = prompt if prompt is not None else (normalized_prompt or "")
+        effective_route = route if route != "" else (selected_route or "")
         key, _, _ = cls.build_canonical_descriptor(
-            prompt=prompt,
+            prompt=effective_prompt,
             task_parameters=task_parameters,
             context_hash=context_hash,
             user_scope=user_scope,
-            route=route,
+            route=effective_route,
             handler_version=handler_version,
             template_version=template_version,
             privacy_class=privacy_class,
         )
         return key
+
+    build_key = build_cache_key
 
     @classmethod
     def build_canonical_descriptor(

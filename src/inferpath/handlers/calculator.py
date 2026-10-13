@@ -116,7 +116,11 @@ class SafeCalculator:
                 raise CalculatorError("Division or modulo by zero is undefined.")
 
             # Exponentiation safety check
-            if op_type is ast.Pow and isinstance(right_val, int | float) and right_val > cls.MAX_EXPONENT:
+            if (
+                op_type is ast.Pow
+                and isinstance(right_val, int | float)
+                and right_val > cls.MAX_EXPONENT
+            ):
                 raise CalculatorError(
                     f"Exponent {right_val} exceeds maximum allowed limit {cls.MAX_EXPONENT}."
                 )
@@ -124,7 +128,9 @@ class SafeCalculator:
             try:
                 result = cls.OPERATORS[op_type](left_val, right_val)
             except OverflowError as err:
-                raise CalculatorError("Arithmetic operation resulted in numerical overflow.") from err
+                raise CalculatorError(
+                    "Arithmetic operation resulted in numerical overflow."
+                ) from err
 
             if isinstance(result, int | float) and abs(result) > cls.MAX_MAGNITUDE:
                 raise CalculatorError(
@@ -165,9 +171,7 @@ class SafeCalculator:
             output_tokens=ProvenanceValue(
                 value=0, provenance=ProvenanceLabel.MEASURED, unit="tokens"
             ),
-            latency_ms=ProvenanceValue(
-                value=0.5, provenance=ProvenanceLabel.MEASURED, unit="ms"
-            ),
+            latency_ms=ProvenanceValue(value=0.5, provenance=ProvenanceLabel.MEASURED, unit="ms"),
             model_version="safe_calculator_v1",
             raw_response={"expression": expr, "result": val},
         )

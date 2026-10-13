@@ -157,9 +157,7 @@ class UnitConverter:
         raise UnitConversionError(f"Unsupported dimension: {dim_from}")
 
     @classmethod
-    def _convert_temperature(
-        cls, value: float, from_u: str, to_u: str
-    ) -> tuple[float, str]:
+    def _convert_temperature(cls, value: float, from_u: str, to_u: str) -> tuple[float, str]:
         canonical_from = cls.TEMPERATURE_UNITS[from_u]
         canonical_to = cls.TEMPERATURE_UNITS[to_u]
 
@@ -235,9 +233,7 @@ class UnitConverter:
             output_tokens=ProvenanceValue(
                 value=0, provenance=ProvenanceLabel.MEASURED, unit="tokens"
             ),
-            latency_ms=ProvenanceValue(
-                value=0.5, provenance=ProvenanceLabel.MEASURED, unit="ms"
-            ),
+            latency_ms=ProvenanceValue(value=0.5, provenance=ProvenanceLabel.MEASURED, unit="ms"),
             model_version="deterministic_unit_converter_v1",
             raw_response={
                 "value": val,

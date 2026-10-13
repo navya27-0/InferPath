@@ -12,7 +12,6 @@ Enforces strict priority order:
 The router only selects the route. Cache lookup occurs downstream in the pipeline.
 """
 
-
 from inferpath.config.settings import RoutingSettings
 from inferpath.handlers.calculator import SafeCalculator
 from inferpath.handlers.date_formatter import DateFormatter
@@ -64,9 +63,7 @@ class RuleBasedRouter:
 
         return decision
 
-    def _evaluate_rules(
-        self, request: UserRequest, analysis: RequestAnalysis
-    ) -> RoutingDecision:
+    def _evaluate_rules(self, request: UserRequest, analysis: RequestAnalysis) -> RoutingDecision:
         # ---------------------------------------------------------
         # Priority 1: Deterministic & Template Local Capabilities
         # Note: Local deterministic and template tiers are safe for private requests
@@ -166,7 +163,8 @@ class RuleBasedRouter:
                     eligible_tiers=[],
                     rule_id="R01",
                     confidence=1.0,
-                    reason=reason or "Privacy policy strictly prohibits external transmission of confidential/internal data.",
+                    reason=reason
+                    or "Privacy policy strictly prohibits external transmission of confidential/internal data.",
                     time_sensitive=False,
                     cache_eligible=False,
                 )
@@ -178,7 +176,8 @@ class RuleBasedRouter:
             # Time-sensitive query routed to model with cache_eligible=False
             tier = (
                 RouteTier.LARGE_MODEL_D
-                if analysis.complexity_indicators or request.task_parameters.quality_preference == "high"
+                if analysis.complexity_indicators
+                or request.task_parameters.quality_preference == "high"
                 else RouteTier.SMALL_MODEL_C
             )
             return RoutingDecision(
@@ -221,7 +220,8 @@ class RuleBasedRouter:
                     else "Explicit high quality preference routed to large model tier."
                 ),
                 time_sensitive=False,
-                cache_eligible=analysis.privacy_class == PrivacyClass.PUBLIC and not analysis.ambiguity_detected,
+                cache_eligible=analysis.privacy_class == PrivacyClass.PUBLIC
+                and not analysis.ambiguity_detected,
             )
 
         # ---------------------------------------------------------
@@ -263,17 +263,13 @@ class RuleBasedRouter:
             fields = request.metadata.get("fields") or {}
             analysis = self.analyzer.analyze(request)
             merged_fields = {**analysis.extracted_fields, **fields}
-            return self.template_engine.execute_handler(
-                decision.template_id, merged_fields
-            )
+            return self.template_engine.execute_handler(decision.template_id, merged_fields)
 
         raise ValueError(
             f"Cannot execute non-local tier '{decision.selected_tier}' via execute_local_handler."
         )
 
-    def _log_decision_safely(
-        self, request: UserRequest, decision: RoutingDecision
-    ) -> None:
+    def _log_decision_safely(self, request: UserRequest, decision: RoutingDecision) -> None:
         if not self.logger:
             return
 

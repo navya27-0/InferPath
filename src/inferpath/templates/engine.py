@@ -40,7 +40,12 @@ REGISTRY: dict[str, TemplateDefinition] = {
         version="1.0.0",
         template_filename="leave_application.j2",
         required_fields=("employee_name", "leave_type", "start_date", "end_date", "reason"),
-        optional_fields=("supervisor_name", "handover_person", "contact_number", "application_date"),
+        optional_fields=(
+            "supervisor_name",
+            "handover_person",
+            "contact_number",
+            "application_date",
+        ),
         field_types={
             "employee_name": str,
             "leave_type": str,
@@ -146,7 +151,11 @@ class TemplateEngine:
 
         for req in defn.required_fields:
             val = fields.get(req)
-            if val is None or (isinstance(val, str) and not val.strip()) or (isinstance(val, list) and len(val) == 0):
+            if (
+                val is None
+                or (isinstance(val, str) and not val.strip())
+                or (isinstance(val, list) and len(val) == 0)
+            ):
                 missing.append(req)
             else:
                 # Type check
@@ -190,9 +199,7 @@ class TemplateEngine:
         except Exception as err:
             raise TemplateExecutionError(f"Template rendering failed: {err}") from err
 
-    def execute_handler(
-        self, template_id: str, fields: dict[str, Any]
-    ) -> HandlerOutput:
+    def execute_handler(self, template_id: str, fields: dict[str, Any]) -> HandlerOutput:
         """Executes the template handler and returns HandlerOutput with clarification if fields are missing."""
         rendered, clarification = self.validate_and_render(template_id, fields)
         defn = self.get_definition(template_id)
@@ -229,9 +236,7 @@ class TemplateEngine:
             output_tokens=ProvenanceValue(
                 value=0, provenance=ProvenanceLabel.MEASURED, unit="tokens"
             ),
-            latency_ms=ProvenanceValue(
-                value=1.5, provenance=ProvenanceLabel.MEASURED, unit="ms"
-            ),
+            latency_ms=ProvenanceValue(value=1.5, provenance=ProvenanceLabel.MEASURED, unit="ms"),
             model_version=f"jinja2_{defn.version}",
             raw_response={"template_id": template_id, "fields": fields},
         )
@@ -263,17 +268,24 @@ def extract_template_fields_from_prompt(
             fields.setdefault("end_date", date_match.group(2).strip())
 
         # Extract name: e.g. "for Alice", "employee Alice", "from Bob"
-        name_match = re.search(r"(?:for|employee|from|by)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", prompt)
+        name_match = re.search(
+            r"(?:for|employee|from|by)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", prompt
+        )
         if name_match:
             fields.setdefault("employee_name", name_match.group(1).strip())
 
         # Extract leave type: sick leave, annual leave, casual leave, vacation
-        type_match = re.search(r"\b(sick leave|annual leave|casual leave|medical leave|maternity leave|paternity leave|vacation)\b", lower_prompt)
+        type_match = re.search(
+            r"\b(sick leave|annual leave|casual leave|medical leave|maternity leave|paternity leave|vacation)\b",
+            lower_prompt,
+        )
         if type_match:
             fields.setdefault("leave_type", type_match.group(1))
 
         # Extract reason: "due to ...", "because of ...", "reason: ..."
-        reason_match = re.search(r"(?:due to|because of|reason:?)\s+([^\.\;\,]+)", prompt, re.IGNORECASE)
+        reason_match = re.search(
+            r"(?:due to|because of|reason:?)\s+([^\.\;\,]+)", prompt, re.IGNORECASE
+        )
         if reason_match:
             fields.setdefault("reason", reason_match.group(1).strip())
 
@@ -293,15 +305,26 @@ def extract_template_fields_from_prompt(
             fields.setdefault("subject", f"Regarding {purpose_match.group(1).strip()}")
 
     elif template_id == "meeting_minutes":
-        title_match = re.search(r"(?:for|meeting:?)\s+([^\.\;\n]+(?:meeting|sync|review|planning))", prompt, re.IGNORECASE)
+        title_match = re.search(
+            r"(?:for|meeting:?)\s+([^\.\;\n]+(?:meeting|sync|review|planning))",
+            prompt,
+            re.IGNORECASE,
+        )
         if title_match:
             fields.setdefault("meeting_title", title_match.group(1).strip())
-        date_match = re.search(r"(?:date:?|on)\s+(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4}|[A-Z][a-z]+\s+\d{1,2},\s+\d{4})", prompt)
+        date_match = re.search(
+            r"(?:date:?|on)\s+(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4}|[A-Z][a-z]+\s+\d{1,2},\s+\d{4})",
+            prompt,
+        )
         if date_match:
             fields.setdefault("date", date_match.group(1).strip())
 
     elif template_id == "cover_letter":
-        app_match = re.search(r"(?:cover letter for|applicant:?)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", prompt, re.IGNORECASE)
+        app_match = re.search(
+            r"(?:cover letter for|applicant:?)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            prompt,
+            re.IGNORECASE,
+        )
         if app_match:
             fields.setdefault("applicant_name", app_match.group(1).strip())
         else:
@@ -309,22 +332,34 @@ def extract_template_fields_from_prompt(
             if cand_name:
                 fields.setdefault("applicant_name", cand_name.group(1).strip())
 
-        company_match = re.search(r"(?:at|company:?)\s+([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)?)", prompt)
+        company_match = re.search(
+            r"(?:at|company:?)\s+([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)?)", prompt
+        )
         if company_match:
             fields.setdefault("company_name", company_match.group(1).strip())
 
-        job_pattern = re.search(r"(?:position of|role of|job:?|for)\s+([A-Za-z0-9\s]+?)\s+at\s+([A-Za-z0-9]+)", prompt, re.IGNORECASE)
+        job_pattern = re.search(
+            r"(?:position of|role of|job:?|for)\s+([A-Za-z0-9\s]+?)\s+at\s+([A-Za-z0-9]+)",
+            prompt,
+            re.IGNORECASE,
+        )
         if job_pattern:
             cand_job = job_pattern.group(1).strip()
             if " for " in cand_job:
                 cand_job = cand_job.split(" for ")[-1].strip()
             fields.setdefault("job_title", cand_job)
         else:
-            job_match = re.search(r"(?:position of|role of|job:?)\s+([^\.\;\,\n]+)", prompt, re.IGNORECASE)
+            job_match = re.search(
+                r"(?:position of|role of|job:?)\s+([^\.\;\,\n]+)", prompt, re.IGNORECASE
+            )
             if job_match:
                 fields.setdefault("job_title", job_match.group(1).strip())
 
-        exp_match = re.search(r"(?:with|experience:?)\s+([\d\w\s]+(?:experience|background|years))", prompt, re.IGNORECASE)
+        exp_match = re.search(
+            r"(?:with|experience:?)\s+([\d\w\s]+(?:experience|background|years))",
+            prompt,
+            re.IGNORECASE,
+        )
         if exp_match:
             fields.setdefault("relevant_experience", exp_match.group(1).strip())
 

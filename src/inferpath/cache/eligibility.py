@@ -1,5 +1,7 @@
 """Explicit cache eligibility and freshness policy enforcement."""
 
+from typing import Any
+
 from pydantic import BaseModel
 
 from inferpath.cache.freshness import FreshnessClassifier
@@ -72,6 +74,17 @@ class CacheEligibilityPolicy:
             bypass_reason=None,
             policy_code="ELIGIBLE",
         )
+
+    @classmethod
+    def is_eligible(
+        cls,
+        request: UserRequest,
+        decision_or_route: Any,
+    ) -> tuple[bool, str | None]:
+        """Convenience method returning (is_eligible, bypass_reason) tuple."""
+        route = getattr(decision_or_route, "selected_tier", decision_or_route)
+        decision = cls.check_lookup_eligibility(request, route)
+        return decision.is_eligible, decision.bypass_reason
 
     @classmethod
     def check_storage_eligibility(

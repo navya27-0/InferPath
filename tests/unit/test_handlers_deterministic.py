@@ -159,7 +159,9 @@ class TestJSONSchemaValidator:
             "properties": {"name": {"type": "string"}, "age": {"type": "number"}},
             "required": ["name", "age"],
         }
-        outcome = JSONSchemaValidator.validate_json_string('{"name": "Alice", "age": 30}', schema=schema)
+        outcome = JSONSchemaValidator.validate_json_string(
+            '{"name": "Alice", "age": 30}', schema=schema
+        )
         assert outcome["valid"] is True
         assert outcome["schema_validated"] is True
 

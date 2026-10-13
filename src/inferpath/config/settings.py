@@ -1,5 +1,6 @@
 """Configuration schemas and loaders for InferPath settings and reference tables."""
 
+import contextlib
 import os
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,9 @@ class RoutingSettings(BaseModel):
             "counterexample",
             "in-depth analysis",
         ]
+    )
+    max_usd_per_run: float = Field(
+        default=0.10, description="Per-run maximum calculated USD budget cap"
     )
 
 
@@ -182,17 +186,34 @@ def load_settings(base_dir: Path | None = None) -> Settings:
             settings.routing.cache_ttls = rt_cfg["cache_ttls"]
         if "thresholds" in rt_cfg:
             settings.routing.thresholds = rt_cfg["thresholds"]
+        if "max_usd_per_run" in rt_cfg:
+            settings.routing.max_usd_per_run = float(rt_cfg["max_usd_per_run"])
 
-    # OpenRouter API key from environment variable
+    # OpenRouter API key and budget from environment variable
     env_api_key = os.getenv("OPENROUTER_API_KEY")
     if env_api_key:
         settings.openrouter.api_key = env_api_key
 
+    env_budget = os.getenv("MAX_USD_PER_RUN")
+    if env_budget:
+        with contextlib.suppress(ValueError):
+            settings.routing.max_usd_per_run = float(env_budget)
+
     return settings
 
 
-def load_pricing_table(config_path: Path) -> PricingTable:
+def load_pricing_table(config_path: Path | None = None) -> PricingTable:
     """Loads dated price reference table."""
+    if config_path is None:
+        cand = Path.cwd() / "configs" / "pricing_table_2026_10.yaml"
+        if cand.exists():
+            config_path = cand
+        else:
+            config_path = (
+                Path(__file__).resolve().parent.parent.parent.parent
+                / "configs"
+                / "pricing_table_2026_10.yaml"
+            )
     with open(config_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     meta = data.get("table_metadata", {})
@@ -213,8 +234,18 @@ def load_pricing_table(config_path: Path) -> PricingTable:
     )
 
 
-def load_carbon_coefficients(config_path: Path) -> CarbonBoundConfig:
+def load_carbon_coefficients(config_path: Path | None = None) -> CarbonBoundConfig:
     """Loads energy and water estimation bounds and system boundary documentation."""
+    if config_path is None:
+        cand = Path.cwd() / "configs" / "carbon_coefficients.yaml"
+        if cand.exists():
+            config_path = cand
+        else:
+            config_path = (
+                Path(__file__).resolve().parent.parent.parent.parent
+                / "configs"
+                / "carbon_coefficients.yaml"
+            )
     with open(config_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     meta = data.get("metadata", {})

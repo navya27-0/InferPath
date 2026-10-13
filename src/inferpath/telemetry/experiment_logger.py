@@ -65,7 +65,7 @@ class ExperimentLogger:
         else:
             parsed = record
 
-        record_dict = parsed.model_dump()
+        record_dict = parsed.model_dump(mode="json")
 
         # Sanitize any errors or metadata values of API keys
         if record_dict.get("error_message"):

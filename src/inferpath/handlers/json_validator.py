@@ -80,9 +80,7 @@ class JSONSchemaValidator:
         }
 
     @classmethod
-    def execute_handler(
-        cls, prompt: str, schema: dict[str, Any] | None = None
-    ) -> HandlerOutput:
+    def execute_handler(cls, prompt: str, schema: dict[str, Any] | None = None) -> HandlerOutput:
         """Executes JSON validation and returns HandlerOutput."""
         # Check if the prompt contains JSON or is wrapped in code blocks
         clean_text = prompt.strip()
@@ -111,9 +109,7 @@ class JSONSchemaValidator:
             output_tokens=ProvenanceValue(
                 value=0, provenance=ProvenanceLabel.MEASURED, unit="tokens"
             ),
-            latency_ms=ProvenanceValue(
-                value=0.5, provenance=ProvenanceLabel.MEASURED, unit="ms"
-            ),
+            latency_ms=ProvenanceValue(value=0.5, provenance=ProvenanceLabel.MEASURED, unit="ms"),
             model_version="deterministic_json_validator_v1",
             raw_response=outcome,
         )
