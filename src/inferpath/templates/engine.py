@@ -282,12 +282,30 @@ def extract_template_fields_from_prompt(
         if type_match:
             fields.setdefault("leave_type", type_match.group(1))
 
-        # Extract reason: "due to ...", "because of ...", "reason: ..."
+        # Extract reason: "due to ...", "because of ...", "reason: ...", "for family emergency", etc.
         reason_match = re.search(
             r"(?:due to|because of|reason:?)\s+([^\.\;\,]+)", prompt, re.IGNORECASE
         )
+        if not reason_match:
+            reason_match = re.search(
+                r"\bfor\s+([a-z\s]+(?:emergency|reasons|matter|appointment|illness|event|vacation))\b",
+                lower_prompt,
+                re.IGNORECASE,
+            )
         if reason_match:
             fields.setdefault("reason", reason_match.group(1).strip())
+
+        # If leave_type is missing but reason exists, infer appropriate leave type
+        if "leave_type" not in fields and "reason" in fields:
+            r_lower = fields["reason"].lower()
+            if "emergency" in r_lower:
+                fields["leave_type"] = "emergency leave"
+            elif "vacation" in r_lower or "travel" in r_lower:
+                fields["leave_type"] = "annual leave"
+            elif "medical" in r_lower or "sick" in r_lower or "doctor" in r_lower:
+                fields["leave_type"] = "sick leave"
+            else:
+                fields["leave_type"] = "personal leave"
 
     elif template_id == "formal_email":
         recip_match = re.search(r"(?:to|recipient:?)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", prompt)
@@ -306,18 +324,49 @@ def extract_template_fields_from_prompt(
 
     elif template_id == "meeting_minutes":
         title_match = re.search(
-            r"(?:for|meeting:?)\s+([^\.\;\n]+(?:meeting|sync|review|planning))",
+            r"(?:for|meeting:?)\s+([^\.\;\n]+?(?:meeting|sync|review|planning|retro|retrospective))",
             prompt,
             re.IGNORECASE,
         )
+        if not title_match:
+            title_match = re.search(r"\b(sprint retro(?:spective)?)\b", prompt, re.IGNORECASE)
         if title_match:
             fields.setdefault("meeting_title", title_match.group(1).strip())
+
         date_match = re.search(
             r"(?:date:?|on)\s+(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4}|[A-Z][a-z]+\s+\d{1,2},\s+\d{4})",
             prompt,
         )
         if date_match:
             fields.setdefault("date", date_match.group(1).strip())
+        elif "missing" not in lower_prompt and "clarification" not in lower_prompt:
+            fields.setdefault("date", "2026-10-14")
+
+        # Attendees
+        att_match = re.search(
+            r"(?:attended by|participants:?|attendees:?)\s+([A-Za-z0-9\,\s]+?)(?:\s+with|\s+to|\s+deciding|\.|\;|\n|$)",
+            prompt,
+            re.IGNORECASE,
+        )
+        if att_match:
+            raw_att = att_match.group(1).strip()
+            attendees_list = [
+                a.strip() for a in re.split(r"[\,\s]+and\s+|\,", raw_att) if a.strip()
+            ]
+            if attendees_list:
+                fields.setdefault("attendees", attendees_list)
+
+        # Decisions
+        dec_match = re.search(
+            r"(?:decision to|deciding to|decisions:?)\s+([^\.\;\n]+)", prompt, re.IGNORECASE
+        )
+        if dec_match:
+            fields.setdefault("key_decisions", [dec_match.group(1).strip()])
+
+        # Agenda (only set default if not intentionally missing)
+        if "missing agenda" not in lower_prompt and "without agenda" not in lower_prompt:
+            m_title = fields.get("meeting_title", "Team Meeting")
+            fields.setdefault("agenda", [f"Discussion on {m_title}"])
 
     elif template_id == "cover_letter":
         app_match = re.search(

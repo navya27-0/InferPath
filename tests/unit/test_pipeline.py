@@ -285,3 +285,39 @@ def test_pipeline_budget_cap_blocks_fallback(tmp_path, pricing_table):
     assert result.validation_passed is False
     trace_steps = [s.get("step") for s in result.route_trace]
     assert "fallback_blocked" in trace_steps
+
+
+@pytest.mark.asyncio
+async def test_pipeline_execute_async_deterministic(in_memory_pipeline):
+    """execute_async handles Tier A requests and produces identical deterministic results."""
+    req = UserRequest(request_id="p_async_det_1", prompt="Calculate 125 * 8")
+    result = await in_memory_pipeline.execute_async(req)
+
+    assert result.final_output == "1000"
+    assert result.final_tier == RouteTier.DETERMINISTIC_A
+    assert result.rule_id == "R03"
+    assert result.was_cached is False
+    assert result.cost_usd.value == 0.0
+
+
+@pytest.mark.asyncio
+async def test_pipeline_execute_async_model_and_caching(in_memory_pipeline):
+    """execute_async completes small model requests asynchronously and caches results."""
+    req = UserRequest(
+        request_id="p_async_model_1",
+        prompt="Classify this review: The camera quality was superb and battery lasted two days.",
+    )
+    result = await in_memory_pipeline.execute_async(req)
+
+    assert result.final_tier == RouteTier.SMALL_MODEL_C
+    assert result.was_cached is False
+    assert result.validation_passed is True
+    assert result.energy_wh.provenance == result.energy_wh.provenance.ESTIMATED
+    assert result.water_ml.provenance == result.water_ml.provenance.ESTIMATED
+    assert result.energy_wh.range_bounds is not None
+    assert result.water_ml.range_bounds is not None
+
+    # Second execution should hit exact cache
+    cached_res = await in_memory_pipeline.execute_async(req)
+    assert cached_res.was_cached is True
+    assert cached_res.final_output == result.final_output

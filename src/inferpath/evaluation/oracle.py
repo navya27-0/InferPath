@@ -1,5 +1,9 @@
 """Route-level ground truth, Oracle selection, and regret calculations."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel
 
 from inferpath.evaluation.checkers import evaluate_output
@@ -7,7 +11,9 @@ from inferpath.evaluation.dataset import DatasetItem
 from inferpath.evaluation.judge import LLMJudge, MockJudge
 from inferpath.models.domain import UserRequest
 from inferpath.models.enums import PrivacyClass, RouteTier
-from inferpath.pipeline import RequestPipeline
+
+if TYPE_CHECKING:
+    from inferpath.pipeline import RequestPipeline
 
 
 class RouteExecutionResult(BaseModel):

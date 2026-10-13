@@ -111,7 +111,7 @@ def create_app(pipeline: RequestPipeline | None = None) -> FastAPI:
         )
 
         try:
-            result = pipeline_instance.execute(user_req)
+            result = await pipeline_instance.execute_async(user_req)
         except PrivacyViolationError:
             raise
         except BudgetExceededError:

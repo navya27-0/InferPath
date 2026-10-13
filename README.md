@@ -125,14 +125,14 @@ The following empirical metrics were logged during the 3-repeat offline benchmar
 
 | System / Baseline | Quality Pass Rate | 95% Bootstrap CI | Cost (USD) | Cost vs A | Latency (ms) | Energy (Wh) | Provenance |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **System_A** | 4.4% ± 0.00% | [4.4%, 4.4%] | $0.03070 | 0.0% | 113.4 ms | 45.695 Wh | `[SIMULATED / CALCULATED]` |
-| **System_B** | 6.2% ± 0.00% | [6.2%, 6.2%] | $0.01960 | 36.2% | 76.1 ms | 29.209 Wh | `[SIMULATED / CALCULATED]` |
-| **System_C** | 6.2% ± 0.00% | [6.2%, 6.2%] | $0.00490 | 84.0% | 20.5 ms | 1.716 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_templates** | 6.2% ± 0.00% | [6.2%, 6.2%] | $0.00490 | 84.0% | 20.2 ms | 1.644 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_small_model** | 6.2% ± 0.00% | [6.2%, 6.2%] | $0.02810 | 8.5% | 23.4 ms | 6.864 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_fallback** | 6.2% ± 0.00% | [6.2%, 6.2%] | $0.00190 | 93.8% | 25.0 ms | 1.119 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_cache** | 6.2% ± 0.00% | [6.2%, 6.2%] | $0.00490 | 84.0% | 25.5 ms | 2.209 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_validation** | 6.2% ± 0.00% | [6.2%, 6.2%] | $0.00190 | 93.8% | 25.9 ms | 1.077 Wh | `[SIMULATED / CALCULATED]` |
+| **System_A** | 69.4% ± 0.00% | [69.4%, 69.4%] | $0.02720 | 0.1% | 89.5 ms | 36.016 Wh | `[SIMULATED / CALCULATED]` |
+| **System_B** | 69.4% ± 0.00% | [69.4%, 69.4%] | $0.01800 | 33.9% | 60.5 ms | 23.255 Wh | `[SIMULATED / CALCULATED]` |
+| **System_C** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.00410 | 84.9% | 35.2 ms | 2.270 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_templates** | 66.2% ± 0.00% | [66.2%, 66.2%] | $0.00410 | 84.9% | 32.1 ms | 2.182 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_small_model** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.02220 | 18.4% | 32.6 ms | 9.807 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_fallback** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.00290 | 89.3% | 35.3 ms | 1.509 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_cache** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.00410 | 84.9% | 35.4 ms | 2.300 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_validation** | 66.2% ± 0.00% | [66.2%, 66.2%] | $0.00290 | 89.3% | 36.5 ms | 1.576 Wh | `[SIMULATED / CALCULATED]` |
 
 - **Summary Artifact**: [`data/results/simulated/benchmark_summary.json`](data/results/simulated/benchmark_summary.json)  
 - **Protocol Config Hash**: `83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3`  

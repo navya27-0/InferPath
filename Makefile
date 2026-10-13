@@ -1,10 +1,15 @@
 # InferPath Development Makefile
-
-PYTHON := .venv/Scripts/python.exe
-PYTEST := .venv/Scripts/pytest.exe
-RUFF := .venv/Scripts/ruff.exe
-
-STREAMLIT := .venv/Scripts/streamlit.exe
+ifeq ($(OS),Windows_NT)
+    PYTHON := .venv/Scripts/python.exe
+    PYTEST := .venv/Scripts/pytest.exe
+    RUFF := .venv/Scripts/ruff.exe
+    STREAMLIT := .venv/Scripts/streamlit.exe
+else
+    PYTHON := .venv/bin/python
+    PYTEST := .venv/bin/pytest
+    RUFF := .venv/bin/ruff
+    STREAMLIT := .venv/bin/streamlit
+endif
 
 .PHONY: help test lint format run eval run-dashboard
 

@@ -11,7 +11,7 @@
 
 InferPath is built around a single foundational premise: **an inference router must pick the least resource-intensive processing tier that meets user constraints without sacrificing correctness or leaking private data.**
 
-The architecture is designed as a deterministic 9-stage pipeline enforcing strict separation between deterministic local processing (Tiers A & B) and neural language model invocation (Tiers C & D), preceded by exact caching and followed by output validation with bounded fallback.
+The architecture is designed as a deterministic 11-step pipeline enforcing strict separation between deterministic local processing (Tiers A & B) and neural language model invocation (Tiers C & D), preceded by exact caching and followed by output validation with bounded fallback.
 
 ```mermaid
 flowchart TD
@@ -21,38 +21,40 @@ flowchart TD
     end
 
     subgraph PreExecution["Pre-Execution Guardrails"]
-        S1[Stage 1: Input Scrubbing & Privacy Classification]
-        S2[Stage 2: Freshness & Time-Sensitivity Analysis]
-        S3[Stage 3: Rule-Based Intent & Complexity Analysis]
-        S4[Stage 4: Canonical SHA-256 Cache Key Building]
+        S1[Step 1: Request Schema & Parameter Validation]
+        S2[Step 2: Privacy Policy Classification & Interception]
+        S3[Step 3: Freshness & Time-Sensitivity Analysis]
+        S4[Step 4: Rule-Based Intent & Route Selection]
+        S5[Step 5: Canonical SHA-256 Cache Key & Eligibility]
     end
 
     subgraph Caching["Exact-Response Cache"]
-        CacheCheck{Cache Eligible?}
-        CacheLookup[SQLite Exact Cache Lookup]
-        CacheStore[(SQLite Exact Cache)]
+        CacheCheck{Step 5: Cache Eligible?}
+        CacheLookup[Step 6: SQLite Exact Cache Lookup]
+        CacheStore[(Step 10: SQLite Cache Store)]
     end
 
     subgraph Execution["Multi-Tier Execution Engine"]
-        TierA[Tier A: Deterministic Rules & Python Math]
+        TierA[Tier A: Safe Math & Unit Conversion]
         TierB[Tier B: Jinja2 Template Slot Filler]
-        TierC[Tier C: Small Model Adapter (~8B)]
-        TierD[Tier D: Large Model Adapter (~70B+)]
+        TierC[Tier C: Small Model Adapter]
+        TierD[Tier D: Large Model Adapter]
     end
 
     subgraph PostExecution["Post-Execution Guardrails"]
-        Val[Stage 7: Deterministic Output Validation]
-        FB{Fallback Required?}
-        Escalate[Stage 8: Fallback Escalation C -> D]
-        Telemetry[Stage 9: Audit Logging & Telemetry]
+        Val[Step 8: Deterministic Output Validation]
+        FB{Step 9: Fallback Required?}
+        Escalate[Step 9: Bounded Escalation C -> D]
+        Telemetry[Step 11: Audit Logging & Telemetry]
     end
 
     Req --> S1
-    S1 -->|Confidential Policy Violation| Block[HTTP 403 Privacy Exception]
-    S1 -->|Allowed| S2
-    S2 --> S3
+    S1 --> S2
+    S2 -->|Confidential Policy Violation| Block[HTTP 403 Privacy Exception]
+    S2 -->|Allowed| S3
     S3 --> S4
-    S4 --> CacheCheck
+    S4 --> S5
+    S5 --> CacheCheck
     CacheCheck -->|Eligible| CacheLookup
     CacheCheck -->|Ineligible: Freshness / Deterministic / Private| Execution
     CacheLookup -->|Hit| Telemetry
