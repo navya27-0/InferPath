@@ -28,8 +28,31 @@ copy .env.example .env
 # Edit .env and supply OPENROUTER_API_KEY
 ```
 
-## Running Tests
+## Development Commands
 
 ```bash
-pytest -v
+# Run test suite (offline with network isolation)
+make test
+
+# Lint and format codebase
+make lint
+make format
+
+# Run mock generation demo
+make run
+
+# Execute empirical research evaluation suite (simulated dev split, 3 repeats)
+make eval
+
+# Launch Streamlit interactive research dashboard & live demo
+make run-dashboard
 ```
+
+## Documentation
+
+- [Architecture & Research Plan](docs/evaluation.md)
+- [Cache Engine Design](docs/cache_design.md)
+- [Routing Rules & Policy](docs/routing_rules.md)
+- [OpenRouter Client & Fallback](docs/openrouter_integration.md)
+- [Research Evaluation Report](docs/evaluation.md)
+- [Research Dashboard Specification](docs/dashboard.md)

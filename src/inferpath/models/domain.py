@@ -181,6 +181,9 @@ class PipelineResult(BaseModel):
     cost_usd: ProvenanceValue[float]
     energy_wh: ProvenanceValue[float]
     water_ml: ProvenanceValue[float]
+    input_tokens: ProvenanceValue[int] | None = None
+    output_tokens: ProvenanceValue[int] | None = None
+    provider_reported_cost_usd: ProvenanceValue[float] | None = None
     privacy_class: PrivacyClass
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

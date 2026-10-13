@@ -4,15 +4,18 @@ PYTHON := .venv/Scripts/python.exe
 PYTEST := .venv/Scripts/pytest.exe
 RUFF := .venv/Scripts/ruff.exe
 
-.PHONY: help test lint format run eval
+STREAMLIT := .venv/Scripts/streamlit.exe
+
+.PHONY: help test lint format run eval run-dashboard
 
 help:
 	@echo "Available commands:"
-	@echo "  make test   - Run default test suite (offline with network isolation)"
-	@echo "  make lint   - Run Ruff linter"
-	@echo "  make format - Format codebase with Ruff"
-	@echo "  make run    - Execute mock model generation demo"
-	@echo "  make eval   - Execute offline research evaluation suite (simulated dev split, 3 repeats)"
+	@echo "  make test          - Run default test suite (offline with network isolation)"
+	@echo "  make lint          - Run Ruff linter"
+	@echo "  make format        - Format codebase with Ruff"
+	@echo "  make run           - Execute mock model generation demo"
+	@echo "  make eval          - Execute offline research evaluation suite (simulated dev split, 3 repeats)"
+	@echo "  make run-dashboard - Launch Streamlit research dashboard"
 
 test:
 	$(PYTEST) -v
@@ -28,3 +31,6 @@ run:
 
 eval:
 	$(PYTHON) -m inferpath.evaluation.runner --mode simulated --split dev --repeats 3
+
+run-dashboard:
+	$(STREAMLIT) run app/dashboard.py

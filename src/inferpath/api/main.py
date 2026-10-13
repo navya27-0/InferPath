@@ -44,6 +44,15 @@ class RespondResponse(BaseModel):
     latency_ms: float
     latency_provenance: str
     route_trace: list[dict[str, Any]] = Field(default_factory=list)
+    input_tokens: int | None = None
+    input_tokens_provenance: str | None = None
+    output_tokens: int | None = None
+    output_tokens_provenance: str | None = None
+    provider_reported_cost_usd: float | None = None
+    energy_wh: float | None = None
+    energy_provenance: str | None = None
+    water_ml: float | None = None
+    water_provenance: str | None = None
 
 
 def create_app(pipeline: RequestPipeline | None = None) -> FastAPI:
@@ -130,6 +139,21 @@ def create_app(pipeline: RequestPipeline | None = None) -> FastAPI:
             latency_ms=result.total_latency_ms.value,
             latency_provenance=result.total_latency_ms.provenance.value,
             route_trace=result.route_trace,
+            input_tokens=result.input_tokens.value if result.input_tokens else None,
+            input_tokens_provenance=result.input_tokens.provenance.value
+            if result.input_tokens
+            else None,
+            output_tokens=result.output_tokens.value if result.output_tokens else None,
+            output_tokens_provenance=result.output_tokens.provenance.value
+            if result.output_tokens
+            else None,
+            provider_reported_cost_usd=result.provider_reported_cost_usd.value
+            if result.provider_reported_cost_usd
+            else None,
+            energy_wh=result.energy_wh.value if result.energy_wh else None,
+            energy_provenance=result.energy_wh.provenance.value if result.energy_wh else None,
+            water_ml=result.water_ml.value if result.water_ml else None,
+            water_provenance=result.water_ml.provenance.value if result.water_ml else None,
         )
 
     return app

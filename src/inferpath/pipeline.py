@@ -526,6 +526,20 @@ class RequestPipeline:
                 else None,
             ),
             privacy_class=request.privacy_class,
+            input_tokens=output.input_tokens,
+            output_tokens=output.output_tokens,
+            provider_reported_cost_usd=(
+                ProvenanceValue(
+                    value=float(output.raw_response["provider_reported_cost_usd"]),
+                    provenance=ProvenanceLabel.MEASURED,
+                    unit="USD",
+                )
+                if (
+                    output.raw_response
+                    and output.raw_response.get("provider_reported_cost_usd") is not None
+                )
+                else None
+            ),
         )
 
         # Telemetry logging to JSONL
