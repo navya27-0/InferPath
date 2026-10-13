@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from inferpath.cache.exact_cache import ExactCache
 from inferpath.config.settings import (
     CarbonBoundConfig,
     PricingTable,
@@ -57,6 +58,12 @@ def db_manager(temp_db_path: str) -> DatabaseManager:
     mgr = DatabaseManager(temp_db_path)
     mgr.init_schema_sync()
     return mgr
+
+
+@pytest.fixture
+def exact_cache(temp_db_path: str) -> ExactCache:
+    """Provides an initialized test exact cache engine."""
+    return ExactCache(temp_db_path)
 
 
 @pytest.fixture

@@ -31,6 +31,7 @@ class UserRequest(BaseModel):
     privacy_class: PrivacyClass = PrivacyClass.PUBLIC
     allow_external_transmission: bool = False
     is_time_sensitive: bool | None = None  # None indicates automatic detection needed
+    user_scope: str = "default"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property

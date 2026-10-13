@@ -13,12 +13,18 @@ CREATE TABLE IF NOT EXISTS exact_cache (
     normalized_prompt TEXT NOT NULL,
     output_text TEXT NOT NULL,
     tier TEXT NOT NULL,
+    response_payload TEXT NOT NULL,
+    requirements_snapshot TEXT NOT NULL,
+    version TEXT NOT NULL,
+    validation_status TEXT NOT NULL,
+    hit_count INTEGER DEFAULT 0,
     input_tokens INTEGER NOT NULL,
     output_tokens INTEGER NOT NULL,
     latency_ms REAL NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_exact_cache_expires ON exact_cache(expires_at);
 
 CREATE TABLE IF NOT EXISTS request_logs (
     request_id TEXT PRIMARY KEY,
