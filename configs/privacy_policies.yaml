@@ -1,0 +1,24 @@
+privacy_classes:
+  public:
+    allow_external_transmission: true
+    allow_caching: true
+    allow_raw_prompt_logging: true
+    description: "Public data; eligible for external APIs, caching, and plain text logging."
+
+  internal:
+    allow_external_transmission: false
+    allow_caching: false
+    allow_raw_prompt_logging: false
+    description: "Internal data; restricted from external APIs unless overridden by explicit approved policy; never cached; logged as sha256 only."
+
+  confidential_private:
+    allow_external_transmission: false
+    allow_caching: false
+    allow_raw_prompt_logging: false
+    description: "Confidential/private data; strict default is no external transmission; never cached; logged as sha256 only."
+
+approved_exceptions:
+  # Explicit list of permitted external transmission overrides.
+  # Default is empty: no external transmission permitted for confidential/private.
+  permitted_external_namespaces: []
+  allow_redacted_transmission_override: false

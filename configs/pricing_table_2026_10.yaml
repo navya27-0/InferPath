@@ -1,0 +1,40 @@
+table_metadata:
+  date: "2026-10-01"
+  source: "OpenRouter public web directory (unverified illustrative snapshot)"
+  verification_status: "unverified_illustrative"
+  currency: "USD"
+  limitations: "Nominal reference rates intended solely for calculated cost testing. Never present these values as verified or billed without an active signed API response."
+
+models:
+  deterministic_a:
+    prompt_price_per_1m: 0.00
+    completion_price_per_1m: 0.00
+    status: "verified_local_zero_cost"
+  template_b:
+    prompt_price_per_1m: 0.00
+    completion_price_per_1m: 0.00
+    status: "verified_local_zero_cost"
+  "google/gemini-2.5-flash":
+    prompt_price_per_1m: 0.075
+    completion_price_per_1m: 0.30
+    status: "unverified_illustrative"
+  "meta-llama/llama-3.1-8b-instruct":
+    prompt_price_per_1m: 0.055
+    completion_price_per_1m: 0.055
+    status: "unverified_illustrative"
+  "anthropic/claude-3.7-sonnet":
+    prompt_price_per_1m: 3.00
+    completion_price_per_1m: 15.00
+    status: "unverified_illustrative"
+  "openai/gpt-4o":
+    prompt_price_per_1m: 2.50
+    completion_price_per_1m: 10.00
+    status: "unverified_illustrative"
+  "mock-small":
+    prompt_price_per_1m: 0.05
+    completion_price_per_1m: 0.20
+    status: "simulated_test_fixture"
+  "mock-large":
+    prompt_price_per_1m: 2.50
+    completion_price_per_1m: 10.00
+    status: "simulated_test_fixture"

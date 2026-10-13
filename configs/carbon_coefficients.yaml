@@ -1,0 +1,83 @@
+metadata:
+  effective_date: "2026-10-01"
+  verification_status: "unverified_illustrative"
+  limitations: "Coefficients are heuristic order-of-magnitude estimates for modeling framework validation only. Values are NOT empirically measured by this system and MUST NOT be cited as verified experimental observations or peer-reviewed facts. Environmental savings are strictly ESTIMATED and never labeled MEASURED."
+  system_boundary_energy: "Scope 2 Datacenter operational compute (server dynamic + idle power per token multiplied by datacenter PUE). Excludes network transit, client device, and Scope 3 manufacturing."
+  system_boundary_water: "Operational cooling water consumption (WUE) plus direct power generation water footprint. Excludes embodied manufacturing water."
+  guidance: "Water is never a headline claim; reported as secondary metric only."
+
+datacenter_pue:
+  unit: "ratio"
+  low: 1.10
+  central: 1.20
+  high: 1.35
+  source_note: "Unverified heuristic assumption for modern hyperscaler datacenter efficiency; uncalibrated against live facility telemetry."
+  verification_status: "unverified_illustrative"
+
+# Estimated energy consumption in Watt-hours per 1,000 tokens
+coefficients_per_1000_tokens:
+  deterministic_a:
+    unit: "Wh / 1000 tokens"
+    low: 0.000001
+    central: 0.000005
+    high: 0.00001
+    source_note: "Unverified heuristic assumption for CPU/memory consumption in local deterministic rule execution."
+    verification_status: "unverified_illustrative"
+  template_b:
+    unit: "Wh / 1000 tokens"
+    low: 0.000005
+    central: 0.00001
+    high: 0.00002
+    source_note: "Unverified heuristic assumption for in-memory template slot filling execution."
+    verification_status: "unverified_illustrative"
+  "google/gemini-2.5-flash":
+    unit: "Wh / 1000 tokens"
+    low: 0.05
+    central: 0.15
+    high: 0.35
+    source_note: "Unverified heuristic estimate for small model parameter tier (~8B active parameters); uncalibrated against provider telemetry."
+    verification_status: "unverified_illustrative"
+  "meta-llama/llama-3.1-8b-instruct":
+    unit: "Wh / 1000 tokens"
+    low: 0.06
+    central: 0.18
+    high: 0.40
+    source_note: "Unverified heuristic estimate for open-weight 8B parameter model tier; uncalibrated against provider telemetry."
+    verification_status: "unverified_illustrative"
+  "anthropic/claude-3.7-sonnet":
+    unit: "Wh / 1000 tokens"
+    low: 0.80
+    central: 2.10
+    high: 4.80
+    source_note: "Unverified heuristic estimate for frontier large model tier; uncalibrated against provider telemetry."
+    verification_status: "unverified_illustrative"
+  "openai/gpt-4o":
+    unit: "Wh / 1000 tokens"
+    low: 0.75
+    central: 2.00
+    high: 4.50
+    source_note: "Unverified heuristic estimate for frontier multimodal model tier; uncalibrated against provider telemetry."
+    verification_status: "unverified_illustrative"
+  "mock-small":
+    unit: "Wh / 1000 tokens"
+    low: 0.05
+    central: 0.15
+    high: 0.35
+    source_note: "Synthetic test fixture values matching small model class heuristics."
+    verification_status: "simulated_test_fixture"
+  "mock-large":
+    unit: "Wh / 1000 tokens"
+    low: 0.80
+    central: 2.10
+    high: 4.80
+    source_note: "Synthetic test fixture values matching large model class heuristics."
+    verification_status: "simulated_test_fixture"
+
+# Operational water intensity in mL per Watt-hour of electricity consumed
+water_intensity:
+  unit: "mL / Wh"
+  low: 1.2
+  central: 2.4
+  high: 4.5
+  source_note: "Unverified order-of-magnitude estimate combining on-site cooling WUE and regional electricity generation water factor."
+  verification_status: "unverified_illustrative"

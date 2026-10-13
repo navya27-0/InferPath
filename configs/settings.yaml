@@ -1,0 +1,28 @@
+app:
+  environment: "research"
+  log_level: "INFO"
+  database_path: "data/storage/inferpath.db"
+
+openrouter:
+  base_url: "https://openrouter.ai/api/v1"
+  timeout_seconds: 30.0
+  max_retries: 2
+  small_model: "google/gemini-2.5-flash"
+  large_model: "anthropic/claude-3.7-sonnet"
+
+routing:
+  enable_cache: true
+  enable_fallback: true
+  default_cache_ttl_seconds: 86400
+  cache_ttls:
+    deterministic_a: 0
+    template_b: 86400
+    small_model_c: 86400
+    large_model_d: 86400
+  thresholds:
+    confidence_threshold: 0.80
+    q_min: 0.70
+
+privacy:
+  strict_mode: true
+  default_allow_external_transmission: false
