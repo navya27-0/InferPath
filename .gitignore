@@ -49,6 +49,8 @@ htmlcov/
 *.db
 *.sqlite3
 *.db-journal
+*.db-wal
+*.db-shm
 data/storage/*.db
 data/logs/*.jsonl
 !data/logs/.gitkeep

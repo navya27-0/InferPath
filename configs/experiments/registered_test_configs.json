@@ -1,0 +1,19 @@
+{
+  "registered_configs": {
+    "83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3": {
+      "config_version": "1.0.0",
+      "config_hash": "83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3",
+      "q_min": 0.7,
+      "dataset_version": "1.0.0",
+      "dataset_sha256": "abc1adac637f7273067b0a5f8398ff6d373ef0de2fc40e3e2bc1a721fee294f3",
+      "price_table_date": "2026-10-01",
+      "carbon_config_date": "2026-10-01",
+      "cache_policy_version": "1.0.0",
+      "rubric_version": "1.0.0",
+      "small_model_id": "google/gemini-2.5-flash",
+      "large_model_id": "anthropic/claude-3.7-sonnet",
+      "registered_at": "2026-10-13T17:36:33.865770+00:00",
+      "registered_commit": "5a0eb25aab38be7bd353657aa279d1a13d17ec65"
+    }
+  }
+}

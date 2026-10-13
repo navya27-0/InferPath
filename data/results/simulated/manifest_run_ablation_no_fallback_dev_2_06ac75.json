@@ -1,0 +1,48 @@
+{
+  "run_id": "run_ablation_no_fallback_dev_2_06ac75",
+  "system_id": "ablation_no_fallback",
+  "run_index": 2,
+  "adapter_mode": "simulated",
+  "split": "dev",
+  "dataset_version": "1.0.0",
+  "dataset_sha256": "deterministic_dataset_sha",
+  "config_hash": "83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3",
+  "git_commit": "5a0eb25aab38be7bd353657aa279d1a13d17ec65",
+  "timestamp": "2026-10-13T17:40:19.221388+00:00",
+  "random_seed": 62,
+  "q_min": 0.7,
+  "price_table_date": "2026-10-01",
+  "environment_info": {
+    "python_version": "3.11.15 (main, Mar 10 2026, 18:12:25) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "node": "LAPTOP-4QLJUCGB"
+  },
+  "summary_metrics": {
+    "system_id": "ablation_no_fallback",
+    "run_id": "run_ablation_no_fallback_dev_2_06ac75",
+    "run_index": 2,
+    "adapter_mode": "simulated",
+    "split": "dev",
+    "total_items": 160,
+    "quality_pass_rate": 0.0625,
+    "avg_quality_score": 0.2582,
+    "total_cost_usd_calculated": 0.001859,
+    "avg_cost_usd_calculated": 1.2e-05,
+    "avg_latency_ms": 25.57,
+    "p50_latency_ms": 28.75,
+    "p95_latency_ms": 61.49,
+    "cache_hit_rate": 0.1437,
+    "fallback_rate": 0.0,
+    "total_energy_wh": 1.3918,
+    "total_water_ml": 3.3403,
+    "avg_cost_regret": 0.0,
+    "over_escalation_rate": 0.0,
+    "under_escalation_rate": 0.0,
+    "route_distribution": {
+      "deterministic_a": 34,
+      "small_model_c": 107,
+      "template_b": 9,
+      "large_model_d": 10
+    }
+  }
+}
