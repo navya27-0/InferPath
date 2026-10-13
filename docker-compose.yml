@@ -1,0 +1,37 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inferpath-api
+    ports:
+      - "8000:8000"
+    environment:
+      - ADAPTER_MODE=simulated
+      - ENVIRONMENT=production
+      - OPENROUTER_API_KEY=""
+    command: ["uvicorn", "inferpath.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inferpath-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      - INFERPATH_API_URL=http://api:8000
+      - ADAPTER_MODE=simulated
+      - ENVIRONMENT=production
+    command: ["streamlit", "run", "app/dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

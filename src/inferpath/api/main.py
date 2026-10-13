@@ -89,6 +89,7 @@ def create_app(pipeline: RequestPipeline | None = None) -> FastAPI:
             },
         )
 
+    @app.get("/health")
     @app.get("/v1/health")
     async def health_check():
         return {"status": "healthy", "service": "inferpath", "version": "0.1.0"}
