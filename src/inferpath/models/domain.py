@@ -74,6 +74,9 @@ class RoutingDecision(BaseModel):
     cache_eligible: bool = True
     template_id: str | None = None
     target_model_name: str | None = None
+    needs_clarification: bool = False
+    clarification_prompt: str | None = None
+    missing_fields: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def sync_route_and_tier(self) -> "RoutingDecision":
@@ -98,6 +101,17 @@ class ModelResult(BaseModel):
     model_id: str
 
 
+class ClarificationRequest(BaseModel):
+    """Structured request emitted when required template or task inputs are missing."""
+
+    template_id: str | None = None
+    task_intent: str | None = None
+    missing_fields: list[str] = Field(default_factory=list)
+    provided_fields: dict[str, Any] = Field(default_factory=dict)
+    clarification_prompt: str
+    needs_clarification: bool = True
+
+
 class HandlerOutput(BaseModel):
     """Standardized output produced by any route handler (A, B, C, or D)."""
 
@@ -110,6 +124,7 @@ class HandlerOutput(BaseModel):
     fallback_used: bool = False
     needs_clarification: bool = False
     clarification_prompt: str | None = None
+    clarification_request: ClarificationRequest | None = None
     input_tokens: ProvenanceValue[int]
     output_tokens: ProvenanceValue[int]
     latency_ms: ProvenanceValue[float]

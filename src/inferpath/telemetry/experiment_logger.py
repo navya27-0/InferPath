@@ -83,6 +83,24 @@ class ExperimentLogger:
 
         return record_dict
 
+    def log_event(self, event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Appends an arbitrary structured telemetry event to JSONL, sanitizing secrets."""
+        event_dict = {
+            "event": event_name,
+            "timestamp": datetime.now(UTC).isoformat(),
+            **payload,
+        }
+        cleaned: dict[str, Any] = {}
+        for k, v in event_dict.items():
+            if isinstance(v, str):
+                cleaned[k] = scrub_api_keys(v)
+            else:
+                cleaned[k] = v
+        line = json.dumps(cleaned, ensure_ascii=False)
+        with open(self.log_path, mode="a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        return cleaned
+
     def read_records(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Reads and parses records from the JSONL log file."""
         if not self.log_path.exists():

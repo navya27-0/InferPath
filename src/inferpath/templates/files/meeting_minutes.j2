@@ -1,0 +1,21 @@
+MEETING MINUTES: {{ meeting_title }}
+Date: {{ date }}
+
+Attendees:
+{% if attendees is iterable and attendees is not string %}{% for attendee in attendees %}- {{ attendee }}
+{% endfor %}{% else %}- {{ attendees }}
+{% endif %}
+Agenda:
+{% if agenda is iterable and agenda is not string %}{% for item in agenda %}- {{ item }}
+{% endfor %}{% else %}- {{ agenda }}
+{% endif %}
+Key Decisions:
+{% if key_decisions is iterable and key_decisions is not string %}{% for decision in key_decisions %}- {{ decision }}
+{% endfor %}{% else %}- {{ key_decisions }}
+{% endif %}{% if action_items %}
+Action Items:
+{% if action_items is iterable and action_items is not string %}{% for item in action_items %}- {{ item }}
+{% endfor %}{% else %}- {{ action_items }}
+{% endif %}{% endif %}{% if next_meeting_date %}
+Next Meeting: {{ next_meeting_date }}
+{% endif %}

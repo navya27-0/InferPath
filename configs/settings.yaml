@@ -22,6 +22,17 @@ routing:
   thresholds:
     confidence_threshold: 0.80
     q_min: 0.70
+  complexity_keywords:
+    - "compare"
+    - "synthesize"
+    - "multi-step"
+    - "evaluate evidence"
+    - "proof"
+    - "prove"
+    - "step-by-step"
+    - "trade-offs"
+    - "counterexample"
+    - "in-depth analysis"
 
 privacy:
   strict_mode: true

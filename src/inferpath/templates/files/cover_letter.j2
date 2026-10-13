@@ -1,0 +1,15 @@
+COVER LETTER
+
+Dear {{ hiring_manager | default("Hiring Manager") }},
+
+I am writing to express my strong interest in the {{ job_title }} position at {{ company_name }}.
+
+{{ relevant_experience }}
+{% if skills %}
+Key Competencies: {{ skills }}
+{% endif %}
+I would welcome the opportunity to discuss my qualifications with you in more detail. Thank you for your time and consideration.
+
+Sincerely,
+{{ applicant_name }}{% if contact_info %}
+Contact: {{ contact_info }}{% endif %}

@@ -46,6 +46,20 @@ class RoutingSettings(BaseModel):
             "q_min": 0.70,
         }
     )
+    complexity_keywords: list[str] = Field(
+        default_factory=lambda: [
+            "compare",
+            "synthesize",
+            "multi-step",
+            "evaluate evidence",
+            "proof",
+            "prove",
+            "step-by-step",
+            "trade-offs",
+            "counterexample",
+            "in-depth analysis",
+        ]
+    )
 
 
 class PricingTable(BaseModel):

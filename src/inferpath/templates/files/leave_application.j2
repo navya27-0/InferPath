@@ -1,0 +1,15 @@
+LEAVE APPLICATION
+Date: {{ application_date | default("Not specified") }}
+To: {{ supervisor_name | default("Supervisor") }}
+
+Dear {{ supervisor_name | default("Supervisor") }},
+
+I am writing to formally request {{ leave_type }} starting from {{ start_date }} to {{ end_date }}.
+Reason for leave: {{ reason }}.
+{% if handover_person %}During my absence, my responsibilities will be covered by {{ handover_person }}.{% endif %}
+{% if contact_number %}In case of an urgent matter, I can be reached at {{ contact_number }}.{% endif %}
+
+Thank you for your consideration.
+
+Sincerely,
+{{ employee_name }}
