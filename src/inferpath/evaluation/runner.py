@@ -63,8 +63,10 @@ def run_full_benchmark_suite(
 
     systems = [
         "System_A",  # Large-only baseline
+        "System_Small",  # Small-only baseline
         "System_B",  # Exact cache + deterministic rules + large model
-        "System_C",  # Full InferPath
+        "System_C",  # Full InferPath (Constraint-aware)
+        "System_Learned",  # Supervised ML router
         "ablation_no_templates",
         "ablation_no_small_model",
         "ablation_no_fallback",

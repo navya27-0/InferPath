@@ -19,7 +19,7 @@ from inferpath.models.domain import (
 )
 from inferpath.models.enums import PrivacyClass, ProvenanceLabel, RouteTier
 from inferpath.models.telemetry import ProvenanceValue
-from inferpath.router.router import RuleBasedRouter
+from inferpath.router import BaseRouter, RuleBasedRouter
 from inferpath.security.budget import RunBudgetTracker
 from inferpath.security.hashing import hash_prompt
 from inferpath.security.privacy import PrivacyPolicyEnforcer, PrivacyViolationError
@@ -53,7 +53,7 @@ class RequestPipeline:
         self,
         settings: Settings | None = None,
         pricing_table: PricingTable | None = None,
-        router: RuleBasedRouter | None = None,
+        router: BaseRouter | RuleBasedRouter | None = None,
         cache: ExactCache | None = None,
         validator: CompositeValidator | None = None,
         small_adapter: ModelAdapter | None = None,
@@ -423,7 +423,12 @@ class RequestPipeline:
 
         # Step 6: Exact-cache lookup
         if is_cache_eligible:
-            cached_output = self.cache.get(cache_key)
+            if hasattr(self.cache, "lookup_async"):
+                cached_output = await self.cache.lookup_async(cache_key)
+            elif hasattr(self.cache, "get_async"):
+                cached_output = await self.cache.get_async(cache_key)
+            else:
+                cached_output = self.cache.get(cache_key)
             if cached_output:
                 route_trace.append({"step": "cache_lookup", "status": "hit"})
                 elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -554,13 +559,30 @@ class RequestPipeline:
             ttl = self.settings.routing.cache_ttls.get(
                 current_tier.value, self.settings.routing.default_cache_ttl_seconds
             )
-            self.cache.store(
-                cache_key=cache_key,
-                request=request,
-                output=output,
-                route=current_tier,
-                ttl_seconds=ttl,
-            )
+            if hasattr(self.cache, "store_async"):
+                await self.cache.store_async(
+                    cache_key=cache_key,
+                    request=request,
+                    output=output,
+                    route=current_tier,
+                    ttl_seconds=ttl,
+                )
+            elif hasattr(self.cache, "set_async"):
+                await self.cache.set_async(
+                    cache_key=cache_key,
+                    output=output,
+                    ttl_seconds=ttl,
+                    request=request,
+                    route=current_tier,
+                )
+            else:
+                self.cache.store(
+                    cache_key=cache_key,
+                    request=request,
+                    output=output,
+                    route=current_tier,
+                    ttl_seconds=ttl,
+                )
             route_trace.append({"step": "cache_write", "status": "stored", "ttl": ttl})
 
         # Step 11: Finalize outcome and log telemetry

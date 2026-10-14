@@ -18,6 +18,9 @@ class TaskParameters(BaseModel):
     audience: str = "general"  # e.g., "general", "technical", "child", "expert"
     quality_preference: str = "balanced"  # e.g., "fast", "balanced", "high"
     max_latency_ms: float | None = None
+    minimum_quality: float = Field(default=0.70, ge=0.0, le=1.0)
+    maximum_cost_usd: float | None = None
+    maximum_latency_ms: float | None = None
 
 
 class UserRequest(BaseModel):
@@ -39,6 +42,18 @@ class UserRequest(BaseModel):
         return self.task_parameters.quality_preference
 
     @property
+    def minimum_quality(self) -> float:
+        return self.task_parameters.minimum_quality
+
+    @property
+    def maximum_cost_usd(self) -> float | None:
+        return self.task_parameters.maximum_cost_usd
+
+    @property
+    def maximum_latency_ms(self) -> float | None:
+        return self.task_parameters.maximum_latency_ms or self.task_parameters.max_latency_ms
+
+    @property
     def format(self) -> str:
         return self.task_parameters.expected_format
 
@@ -48,12 +63,15 @@ class UserRequest(BaseModel):
 
     @property
     def latency(self) -> float | None:
-        return self.task_parameters.max_latency_ms
+        return self.maximum_latency_ms
 
     @property
     def preferences(self) -> dict[str, Any]:
         return {
             "quality": self.quality,
+            "minimum_quality": self.minimum_quality,
+            "maximum_cost_usd": self.maximum_cost_usd,
+            "maximum_latency_ms": self.maximum_latency_ms,
             "format": self.format,
             "language": self.language,
             "latency": self.latency,

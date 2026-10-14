@@ -1,8 +1,8 @@
 # InferPath — Architecture Specification & Component Lifecycle
 
-**Document Version**: 1.0.0  
+**Document Version**: 1.2.0  
 **Effective Date**: 2026-10-14  
-**Status**: Implemented & Tested  
+**Status**: Implemented, Hardened & Tested  
 **Primary Implementation**: `src/inferpath/pipeline.py` (`inferpath.pipeline.RequestPipeline`)
 
 ---
@@ -11,7 +11,13 @@
 
 InferPath is built around a single foundational premise: **an inference router must pick the least resource-intensive processing tier that meets user constraints without sacrificing correctness or leaking private data.**
 
-The architecture is designed as a deterministic 11-step pipeline enforcing strict separation between deterministic local processing (Tiers A & B) and neural language model invocation (Tiers C & D), preceded by exact caching and followed by output validation with bounded fallback.
+Mathematically, InferPath solves the constrained optimization program:
+
+$$\min_{t \in \mathcal{T}_{\text{candidate}}} \text{Cost}(t) + \lambda \cdot \text{Latency}(t)$$
+
+$$\text{subject to:} \quad \hat{Q}(t) \ge Q_{\min}, \quad \text{Privacy satisfied}, \quad \text{Cost} \le B_{\max}, \quad \text{Latency} \le L_{\max}$$
+
+The architecture is designed as a deterministic 11-step asynchronous pipeline enforcing strict separation between deterministic local processing (Tiers A & B) and neural language model invocation (Tiers C & D), preceded by exact caching and followed by output validation with bounded fallback.
 
 ```mermaid
 flowchart TD
@@ -24,28 +30,28 @@ flowchart TD
         S1[Step 1: Request Schema & Parameter Validation]
         S2[Step 2: Privacy Policy Classification & Interception]
         S3[Step 3: Freshness & Time-Sensitivity Analysis]
-        S4[Step 4: Rule-Based Intent & Route Selection]
+        S4[Step 4: Strategy-Based Route Selection]
         S5[Step 5: Canonical SHA-256 Cache Key & Eligibility]
     end
 
-    subgraph Caching["Exact-Response Cache"]
+    subgraph Caching["Asynchronous Exact-Response Cache"]
         CacheCheck{Step 5: Cache Eligible?}
-        CacheLookup[Step 6: SQLite Exact Cache Lookup]
-        CacheStore[(Step 10: SQLite Cache Store)]
+        CacheLookup[Step 6: Async SQLite Cache Lookup]
+        CacheStore[(Step 10: Async SQLite Cache Store)]
     end
 
-    subgraph Execution["Multi-Tier Execution Engine"]
+    subgraph Execution["Multi-Tier Execution Engine & Circuit Breakers"]
         TierA[Tier A: Safe Math & Unit Conversion]
         TierB[Tier B: Jinja2 Template Slot Filler]
-        TierC[Tier C: Small Model Adapter]
-        TierD[Tier D: Large Model Adapter]
+        TierC[Tier C: Small Model Adapter + Circuit Breaker]
+        TierD[Tier D: Large Model Adapter + Circuit Breaker]
     end
 
     subgraph PostExecution["Post-Execution Guardrails"]
         Val[Step 8: Deterministic Output Validation]
         FB{Step 9: Fallback Required?}
         Escalate[Step 9: Bounded Escalation C -> D]
-        Telemetry[Step 11: Audit Logging & Telemetry]
+        Telemetry[Step 11: Prometheus Metrics & Audit Logging]
     end
 
     Req --> S1
@@ -86,46 +92,53 @@ flowchart TD
    - Enforces zero API key leakage in error traces using `scrub_api_keys()`.
 2. **Freshness Detector** (`inferpath.router.analyzer.FreshnessDetector`):
    - Evaluates linguistic cues for temporal volatility (e.g., "current stock price", "weather right now").
-   - Distinguishes genuine time-sensitive queries from timeless rhetorical constructs (e.g., "Today we know that the Earth orbits the Sun").
+   - Distinguishes genuine time-sensitive queries from timeless rhetorical constructs.
    - Automatically marks volatile queries as cache-ineligible (Rule R02).
-3. **Rule-Based Router** (`inferpath.router.router.RuleBasedRouter`):
-   - Executes ordered pattern matchers:
-     - Rule R03/R04: Exact arithmetic and unit conversions $\to$ Tier A.
-     - Rule R05: Structured business templates $\to$ Tier B.
-     - Rule R06/R07: JSON schema validation and date formatting $\to$ Tier A.
-     - Rule R08: Complex synthesis and proofs $\to$ Tier D.
-     - Rule R09: Standard text classification and summarization $\to$ Tier C.
-     - Rule R10: Ambiguous or high-quality preference $\to$ Tier D.
 
-### 2.2 Exact-Response Cache Engine
+### 2.2 Multi-Strategy Routing System (`inferpath.router.strategies`)
+InferPath supports pluggable routing strategies implementing the unified `BaseRouter` interface:
+1. **`AlwaysLargeRouter`**: Baseline simulating standard enterprise setups routing all traffic directly to frontier models (Tier D).
+2. **`AlwaysSmallRouter`**: Aggressive cost-saving baseline directing queries to ~8B parameter models (Tier C).
+3. **`RuleBasedRouter`**: Deterministic rule matcher executing ordered rules (R01–R10) based on regex and keyword tokens.
+4. **`ConstraintAwareRouter`** (Default InferPath Strategy):
+   - Evaluates estimated tier quality against `request.minimum_quality` ($Q_{\min}$, default 0.70).
+   - Enforces cost ceilings (`maximum_cost_usd` / $B_{\max}$) and latency ceilings (`maximum_latency_ms` / $L_{\max}$).
+   - Optimizes the Lagrangian objective $\text{Cost}(t) + \lambda \cdot \text{Latency}(t)$ among all candidate tiers satisfying constraints.
+5. **`LearnedRouter`**:
+   - 4-class `RandomForestClassifier` trained on query structural features (length, word count, digit ratios, punctuation, math symbols, JSON syntax).
+   - Deterministic seed (`random_state=42`) with sub-millisecond inference overhead ($<2$ ms).
+
+### 2.3 Asynchronous Exact-Response Cache Engine (`inferpath.cache`)
 - **Canonical Key Builder** (`inferpath.cache.key_builder.CanonicalKeyBuilder`):
   - Builds canonical JSON with sorted keys containing: `normalized_prompt`, `task_parameters`, `context_hash`, `user_scope`, `selected_route`, `handler_version`, `template_version`, and `privacy_class`.
   - Computes a deterministic SHA-256 digest ensuring identical canonical inputs yield identical keys.
-- **Cache Storage** (`inferpath.cache.exact_cache.ExactCache`):
-  - Persistent SQLite backing store with TTL management and transactional writes.
-  - Skips cache lookups for Tier A (which executes locally in $<0.1$ ms).
+- **Asynchronous SQLite Cache** (`inferpath.cache.exact_cache.ExactCache`):
+  - Thread-safe non-blocking I/O using `aiosqlite` with `lookup_async` and `store_async`.
+  - Enforces TTL expiration and skips lookup for local deterministic handlers (Tier A $<0.1$ ms).
 
-### 2.3 Tier Handlers & Model Adapters
-- **Tier A Handlers** (`inferpath.handlers`):
-  - `SafeCalculator`: AST-parsed arithmetic without Python `eval()`.
-  - `UnitConverter`: Dimensional analysis with floating precision.
-  - `DateFormatter`: ISO 8601 formatting.
-- **Tier B Template Engine** (`inferpath.templates.engine.TemplateEngine`):
-  - Jinja2 in-memory slot filler.
-  - Emits structured `ClarificationRequest` when required slots are missing, preventing ungrounded generation.
-- **Tier C & D Model Adapters** (`inferpath.handlers`):
-  - `OpenRouterAdapter`: Asynchronous HTTP client communicating with `https://openrouter.ai/api/v1` using OpenAI-compatible payload structures.
-  - `MockSmallModel` and `MockLargeModel`: Hermetic, deterministic offline mock adapters for offline test and benchmark suites.
+### 2.4 Tier Handlers & Model Adapters (`inferpath.handlers`)
+- **Tier A Handlers**: Safe AST-based calculator, unit converter, date formatter.
+- **Tier B Template Engine**: Jinja2 slot-filler with automatic `ClarificationRequest` emission when required slots are missing.
+- **Tier C & D OpenRouter Adapter**:
+  - Asynchronous HTTP client communicating with `https://openrouter.ai/api/v1`.
+  - **Circuit Breaker Pattern** (`CircuitBreaker`):
+    - States: `CLOSED`, `OPEN`, `HALF_OPEN`.
+    - Automatically trips after 3 consecutive HTTP 5xx/429/timeout failures.
+    - Fails fast immediately with `CircuitBreakerOpenError` during recovery window (60s) before transitioning to `HALF_OPEN` probe test.
+- **Mock Adapters** (`MockSmallModel`, `MockLargeModel`): Deterministic offline models guaranteeing zero network calls in test and simulated benchmark suites.
 
-### 2.4 Output Validation & Fallback State Machine
-- **Composite Validator** (`inferpath.validators`):
-  - `NonEmptyValidator`: Rejects blank or whitespace-only outputs.
-  - `LengthValidator`: Validates token/character length boundaries.
-  - `FormatValidator`: Validates JSON parseability or required markdown headings.
-  - `RefusalDetector`: Detects canned model refusals (e.g., "I cannot fulfill this request").
-- **Bounded Fallback** (`inferpath.pipeline.RequestPipeline`):
-  - If Tier C small model output fails validation, automatically escalates to Tier D large model.
-  - Maximum fallback depth is strictly bounded to 1 to prevent unbounded latency or billing cycles.
+### 2.5 Post-Execution Guardrails & Production Observability
+- **Composite Validator** (`inferpath.validators`): Structural schemas, regex patterns, length bounds, and refusal detection.
+- **Bounded Fallback**: Single-level fallback (Tier C $\to$ Tier D) when validation fails. Fallback depth is capped at 1.
+- **Sliding-Window Rate Limiter** (`inferpath.api.main.RateLimiter`): Protects against DoS bursts with configurable window limits (default 120 req/min per client IP).
+- **Prometheus Telemetry** (`inferpath.telemetry.metrics.MetricsCollector`):
+  - Exports standard Prometheus exposition metrics at `/metrics`:
+    - `inferpath_requests_total{tier, status}`
+    - `inferpath_request_duration_ms` (histogram)
+    - `inferpath_cost_usd_total`
+    - `inferpath_cache_hits_total`
+    - `inferpath_privacy_blocked_total`
+    - `inferpath_fallback_total`
 
 ---
 

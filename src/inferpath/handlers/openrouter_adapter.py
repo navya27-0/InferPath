@@ -50,6 +50,53 @@ class OpenRouterResponseError(OpenRouterError):
     pass
 
 
+class CircuitBreakerOpenError(OpenRouterError):
+    """Raised when request is rejected immediately because circuit breaker is OPEN."""
+
+    pass
+
+
+class CircuitBreaker:
+    """
+    Standard state-machine circuit breaker.
+
+    States:
+      - CLOSED: normal dispatch
+      - OPEN: fail-fast on consecutive provider errors (5xx / 429 / timeouts)
+      - HALF_OPEN: test probe after recovery timeout
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout_seconds: float = 30.0,
+    ):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout_seconds = recovery_timeout_seconds
+        self.state = "CLOSED"
+        self.consecutive_failures = 0
+        self.last_failure_time: float = 0.0
+
+    def can_execute(self) -> bool:
+        now = time.monotonic()
+        if self.state == "OPEN":
+            if now - self.last_failure_time >= self.recovery_timeout_seconds:
+                self.state = "HALF_OPEN"
+                return True
+            return False
+        return True
+
+    def record_success(self) -> None:
+        self.consecutive_failures = 0
+        self.state = "CLOSED"
+
+    def record_failure(self) -> None:
+        self.consecutive_failures += 1
+        self.last_failure_time = time.monotonic()
+        if self.consecutive_failures >= self.failure_threshold:
+            self.state = "OPEN"
+
+
 class OpenRouterAdapter:
     """
     HTTP client adapter connecting to OpenRouter (OpenAI-compatible chat completions).
@@ -76,6 +123,7 @@ class OpenRouterAdapter:
         client: httpx.Client | None = None,
         async_client: httpx.AsyncClient | None = None,
         budget_tracker: RunBudgetTracker | None = None,
+        circuit_breaker: CircuitBreaker | None = None,
     ):
         self.model_id = model_id
         self.pricing_table = pricing_table
@@ -87,6 +135,7 @@ class OpenRouterAdapter:
         self._client = client
         self._async_client = async_client
         self.budget_tracker = budget_tracker
+        self.circuit_breaker = circuit_breaker or CircuitBreaker()
 
     def _get_headers(self) -> dict[str, str]:
         headers = {
@@ -153,6 +202,11 @@ class OpenRouterAdapter:
 
     def generate(self, prompt: str, **params: Any) -> ModelResult:
         """Synchronous model completion with retries, timeout, and budget tracking."""
+        if not self.circuit_breaker.can_execute():
+            raise CircuitBreakerOpenError(
+                f"Circuit breaker is OPEN for model '{self.model_id}'. Dispatch halted to prevent cascading failure."
+            )
+
         endpoint = f"{self.base_url}/chat/completions"
         payload = self._prepare_payload(prompt, **params)
         headers = self._get_headers()
@@ -174,6 +228,7 @@ class OpenRouterAdapter:
                 try:
                     response = client.post(endpoint, json=payload, headers=headers)
                     if response.status_code == 200:
+                        self.circuit_breaker.record_success()
                         latency_ms = (time.perf_counter() - start_time) * 1000.0
                         data = response.json()
                         result = self._parse_response_body(data, latency_ms)
@@ -223,6 +278,11 @@ class OpenRouterAdapter:
 
             raise OpenRouterProviderError("Exhausted retries calling OpenRouter API.")
 
+        except (OpenRouterRateLimitError, OpenRouterProviderError, OpenRouterTimeoutError):
+            self.circuit_breaker.record_failure()
+            if self.budget_tracker and reservation_token:
+                self.budget_tracker.release(reservation_token)
+            raise
         except Exception:
             if self.budget_tracker and reservation_token:
                 self.budget_tracker.release(reservation_token)
@@ -233,6 +293,11 @@ class OpenRouterAdapter:
 
     async def generate_async(self, prompt: str, **params: Any) -> ModelResult:
         """Asynchronous model completion with bounded retries and budget reservation."""
+        if not self.circuit_breaker.can_execute():
+            raise CircuitBreakerOpenError(
+                f"Circuit breaker is OPEN for model '{self.model_id}'. Dispatch halted to prevent cascading failure."
+            )
+
         endpoint = f"{self.base_url}/chat/completions"
         payload = self._prepare_payload(prompt, **params)
         headers = self._get_headers()
@@ -253,6 +318,7 @@ class OpenRouterAdapter:
                 try:
                     response = await async_client.post(endpoint, json=payload, headers=headers)
                     if response.status_code == 200:
+                        self.circuit_breaker.record_success()
                         latency_ms = (time.perf_counter() - start_time) * 1000.0
                         data = response.json()
                         result = self._parse_response_body(data, latency_ms)
@@ -299,6 +365,11 @@ class OpenRouterAdapter:
 
             raise OpenRouterProviderError("Exhausted retries calling OpenRouter API.")
 
+        except (OpenRouterRateLimitError, OpenRouterProviderError, OpenRouterTimeoutError):
+            self.circuit_breaker.record_failure()
+            if self.budget_tracker and reservation_token:
+                self.budget_tracker.release(reservation_token)
+            raise
         except Exception:
             if self.budget_tracker and reservation_token:
                 self.budget_tracker.release(reservation_token)

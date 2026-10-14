@@ -152,6 +152,8 @@ class ExactCache:
             except Exception:
                 return None
 
+    get_async = lookup_async
+
     def store(
         self,
         cache_key: str,
@@ -302,6 +304,26 @@ class ExactCache:
                 return True
             except Exception:
                 return False
+
+    async def set_async(
+        self,
+        cache_key: str,
+        output: HandlerOutput,
+        ttl_seconds: int = 86400,
+        request: UserRequest | None = None,
+        route: RouteTier | str | None = None,
+        **kwargs: Any,
+    ) -> bool:
+        """Async alias for store_async matching key-value cache conventions."""
+        req = request or UserRequest(request_id=f"cache_{cache_key[:8]}", prompt=output.output_text)
+        rt = route or output.tier
+        return await self.store_async(
+            cache_key=cache_key,
+            request=req,
+            output=output,
+            route=rt,
+            ttl_seconds=ttl_seconds,
+        )
 
     def purge_expired(self) -> int:
         """

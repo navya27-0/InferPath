@@ -1,5 +1,6 @@
 """Experiment execution harness orchestrating Systems A, B, C and Ablations under frozen protocol."""
 
+import hashlib
 import json
 import platform
 import sys
@@ -8,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+import numpy as np
 from pydantic import BaseModel
 
 from inferpath.cache.exact_cache import ExactCache
@@ -27,7 +29,13 @@ from inferpath.models.domain import HandlerOutput, RoutingDecision, UserRequest
 from inferpath.models.enums import PrivacyClass, ProvenanceLabel, RouteTier
 from inferpath.models.telemetry import ProvenanceValue
 from inferpath.pipeline import RequestPipeline
-from inferpath.router.router import RuleBasedRouter
+from inferpath.router import (
+    AlwaysLargeRouter,
+    AlwaysSmallRouter,
+    ConstraintAwareRouter,
+    LearnedRouter,
+    RuleBasedRouter,
+)
 from inferpath.security.budget import RunBudgetTracker
 from inferpath.validators import CompositeValidator, create_default_validator
 
@@ -136,21 +144,48 @@ class ExperimentHarness:
             large_adapter = MockLargeModel()
 
         router = None
-        if system_id == "System_A":
-            # Large-only baseline: no cache, no fallback
+        if system_id == "System_A" or system_id == "router_always_large":
+            # Large-only baseline: no cache, no fallback, AlwaysLargeRouter
             settings.routing.enable_cache = False
             settings.routing.enable_fallback = False
             validator = None
+            router = AlwaysLargeRouter(routing_settings=settings.routing)
         elif system_id == "System_B":
             # Cache + Rules + Large: exact cache on, fallback off
             settings.routing.enable_cache = True
             settings.routing.enable_fallback = False
             validator = None
+
+            class NoSmallModelRouter(RuleBasedRouter):
+                def route(self, request: UserRequest) -> RoutingDecision:
+                    dec = super().route(request)
+                    if dec.selected_tier == RouteTier.SMALL_MODEL_C:
+                        dec.selected_tier = RouteTier.LARGE_MODEL_D
+                        dec.rule_id = "RULES_LARGE_ONLY"
+                    return dec
+
+            router = NoSmallModelRouter(routing_settings=settings.routing)
         elif system_id == "System_C":
-            # Full InferPath
+            # Full InferPath (Constraint-aware cost-quality optimization)
             settings.routing.enable_cache = True
             settings.routing.enable_fallback = True
             validator = create_default_validator()
+            router = ConstraintAwareRouter(routing_settings=settings.routing, pricing_table=pricing)
+        elif system_id in ("System_Learned", "router_learned"):
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = True
+            validator = create_default_validator()
+            router = LearnedRouter(routing_settings=settings.routing, pricing_table=pricing)
+        elif system_id in ("System_Small", "router_always_small"):
+            settings.routing.enable_cache = False
+            settings.routing.enable_fallback = False
+            validator = None
+            router = AlwaysSmallRouter(routing_settings=settings.routing)
+        elif system_id == "router_rules":
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = True
+            validator = create_default_validator()
+            router = RuleBasedRouter(routing_settings=settings.routing)
         elif system_id == "ablation_no_templates":
             settings.routing.enable_cache = True
             settings.routing.enable_fallback = True
@@ -434,10 +469,13 @@ class ExperimentHarness:
             qualities.append(final_quality)
 
             # Environmental estimate
+            in_tok = res.input_tokens.value if res.input_tokens else 0
+            out_tok = res.output_tokens.value if res.output_tokens else 0
+            total_tokens = in_tok + out_tok
             env_est = self.estimator.estimate(
                 tier=res.final_tier,
                 model_id=None,
-                total_tokens=int(res.total_latency_ms.value),
+                total_tokens=total_tokens,
                 was_cached=res.was_cached,
             )
             total_energy += env_est.energy_wh.value
@@ -488,9 +526,8 @@ class ExperimentHarness:
             )
 
         n_items = len(items)
-        sorted_latencies = sorted(latencies)
-        p50 = sorted_latencies[int(n_items * 0.50)] if n_items else 0.0
-        p95 = sorted_latencies[int(n_items * 0.95)] if n_items else 0.0
+        p50 = float(np.percentile(latencies, 50)) if n_items else 0.0
+        p95 = float(np.percentile(latencies, 95)) if n_items else 0.0
 
         summary = SystemExecutionSummary(
             system_id=system_id,
@@ -516,6 +553,13 @@ class ExperimentHarness:
             route_distribution=route_dist,
         )
 
+        dataset_path = Path("data/pilot_dataset.json")
+        dataset_sha = (
+            hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+            if dataset_path.exists()
+            else "deterministic_dataset_sha"
+        )
+
         manifest = RunManifest(
             run_id=run_id,
             system_id=system_id,
@@ -523,7 +567,7 @@ class ExperimentHarness:
             adapter_mode=self.adapter_mode,
             split=split,
             dataset_version="1.0.0",
-            dataset_sha256="deterministic_dataset_sha",
+            dataset_sha256=dataset_sha,
             config_hash=config_hash,
             git_commit=get_git_commit(),
             timestamp=datetime.now(UTC).isoformat(),
