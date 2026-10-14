@@ -169,3 +169,41 @@ def test_learned_router(pricing_table):
     )
     dec_conf = router.route(req_conf)
     assert dec_conf.rule_id == "R01"
+
+
+def test_oracle_router(pricing_table):
+    from inferpath.router import OracleRouter
+
+    router = OracleRouter(pricing_table=pricing_table)
+
+    # 1. Math query -> Tier A
+    req_math = UserRequest(request_id="req_o1", prompt="45 * 12 + 100")
+    dec_math = router.route(req_math)
+    assert dec_math.selected_tier == RouteTier.DETERMINISTIC_A
+    assert dec_math.rule_id == "ORACLE_TIER_A"
+
+    # 2. Standard query -> Tier C
+    req_std = UserRequest(
+        request_id="req_o2", prompt="Summarize this meeting notice into 3 bullet points."
+    )
+    dec_std = router.route(req_std)
+    assert dec_std.selected_tier == RouteTier.SMALL_MODEL_C
+    assert dec_std.rule_id == "ORACLE_EFFICIENT_C"
+
+    # 3. Complex proof query -> Tier D
+    req_proof = UserRequest(
+        request_id="req_o3", prompt="Provide a formal proof of Fermat's Little Theorem."
+    )
+    dec_proof = router.route(req_proof)
+    assert dec_proof.selected_tier == RouteTier.LARGE_MODEL_D
+    assert dec_proof.rule_id == "ORACLE_FRONTIER_D"
+
+    # 4. Confidential query -> R01 Block
+    req_conf = UserRequest(
+        request_id="req_o4",
+        prompt="Confidential strategy doc",
+        privacy_class=PrivacyClass.CONFIDENTIAL_PRIVATE,
+        allow_external_transmission=False,
+    )
+    dec_conf = router.route(req_conf)
+    assert dec_conf.rule_id == "R01"

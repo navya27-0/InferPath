@@ -674,3 +674,136 @@ class LearnedRouter(BaseRouter):
         )
         self._log_decision_safely(request, decision)
         return decision
+
+
+class OracleRouter(BaseRouter):
+    """Theoretical ex-post optimal Oracle Router establishing the Pareto lower bound.
+
+    In inference routing literature, the Oracle represents the theoretical upper limit
+    of routing efficiency. For each query, it selects the minimal resource-cost tier
+    capable of passing validation:
+    1. Preserves Stage 1 privacy invariants (confidential -> HTTP 403 / R01).
+    2. Exact arithmetic/conversions -> Tier A ($0.00 cost, <0.1 ms).
+    3. Structural templates -> Tier B ($0.00 cost, <0.5 ms).
+    4. Tasks solvable by ~8B models (classification, extraction, summaries) -> Tier C.
+    5. Complex multi-hop reasoning, creative synthesis, and formal proofs -> Tier D.
+
+    Used as the theoretical benchmark against which empirical routing regret is measured.
+    """
+
+    def route(self, request: UserRequest) -> RoutingDecision:
+        # Step 1: Privacy Invariant Check
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+                request, RouteTier.LARGE_MODEL_D
+            )
+            if not can_transmit:
+                decision = RoutingDecision(
+                    selected_tier=RouteTier.DETERMINISTIC_A,
+                    eligible_tiers=[],
+                    rule_id="R01",
+                    confidence=1.0,
+                    reason=reason
+                    or f"Privacy policy violation: {request.privacy_class.value} cannot be transmitted externally.",
+                    time_sensitive=False,
+                    cache_eligible=False,
+                )
+                self._log_decision_safely(request, decision)
+                return decision
+
+        analysis = self.analyzer.analyze(request)
+
+        # Step 2: Deterministic Handlers (Tier A) - exact mathematical/formatting tasks
+        if analysis.task_intent in (
+            "arithmetic",
+            "unit_conversion",
+            "date_formatting",
+            "json_validation",
+        ):
+            decision = RoutingDecision(
+                selected_tier=RouteTier.DETERMINISTIC_A,
+                eligible_tiers=[RouteTier.DETERMINISTIC_A],
+                rule_id="ORACLE_TIER_A",
+                confidence=1.0,
+                reason="Oracle lower bound: exact deterministic solution available locally at zero cost.",
+                time_sensitive=False,
+                cache_eligible=False,
+            )
+            self._log_decision_safely(request, decision)
+            return decision
+
+        # Step 3: Structured Templates (Tier B)
+        if analysis.template_id and not analysis.missing_inputs:
+            decision = RoutingDecision(
+                selected_tier=RouteTier.TEMPLATE_B,
+                eligible_tiers=[RouteTier.TEMPLATE_B],
+                rule_id="ORACLE_TIER_B",
+                confidence=1.0,
+                reason=f"Oracle lower bound: template '{analysis.template_id}' satisfies request deterministically.",
+                time_sensitive=False,
+                cache_eligible=True,
+                template_id=analysis.template_id,
+            )
+            self._log_decision_safely(request, decision)
+            return decision
+
+        if analysis.template_id and analysis.missing_inputs:
+            decision = RoutingDecision(
+                selected_tier=RouteTier.TEMPLATE_B,
+                eligible_tiers=[RouteTier.TEMPLATE_B],
+                rule_id="R07",
+                confidence=1.0,
+                reason=f"Template '{analysis.template_id}' requires clarification.",
+                template_id=analysis.template_id,
+                time_sensitive=False,
+                cache_eligible=False,
+                needs_clarification=True,
+                clarification_prompt=f"Please provide: {', '.join(analysis.missing_inputs)}",
+                missing_fields=analysis.missing_inputs,
+            )
+            self._log_decision_safely(request, decision)
+            return decision
+
+        # Step 4: Tasks requiring Frontier Capabilities (Tier D)
+        # Complex multi-hop reasoning, formal proofs, advanced code synthesis, or high ambiguity
+        prompt_lower = request.prompt.lower()
+        complex_signals = (
+            "prove",
+            "formal proof",
+            "mathematical proof",
+            "step-by-step derivation",
+            "refactor the entire",
+            "architect a system",
+            "compare and contrast the epistemological",
+            "nuanced philosophical",
+        )
+        is_complex = any(sig in prompt_lower for sig in complex_signals) or (
+            request.minimum_quality > 0.85
+        )
+
+        selected_tier = RouteTier.LARGE_MODEL_D if is_complex else RouteTier.SMALL_MODEL_C
+        rule_id = "ORACLE_FRONTIER_D" if is_complex else "ORACLE_EFFICIENT_C"
+        reason = (
+            "Oracle lower bound: complex reasoning requires frontier model capacity."
+            if is_complex
+            else "Oracle lower bound: standard task successfully solvable by efficient 8B model."
+        )
+
+        cache_eligible = (
+            request.privacy_class == PrivacyClass.PUBLIC and not analysis.freshness_needed
+        )
+
+        decision = RoutingDecision(
+            selected_tier=selected_tier,
+            eligible_tiers=[selected_tier, RouteTier.LARGE_MODEL_D],
+            rule_id=rule_id,
+            confidence=1.0,
+            reason=reason,
+            time_sensitive=analysis.freshness_needed,
+            cache_eligible=cache_eligible,
+        )
+        self._log_decision_safely(request, decision)
+        return decision

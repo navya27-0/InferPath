@@ -34,6 +34,7 @@ from inferpath.router import (
     AlwaysSmallRouter,
     ConstraintAwareRouter,
     LearnedRouter,
+    OracleRouter,
     RuleBasedRouter,
 )
 from inferpath.security.budget import RunBudgetTracker
@@ -181,6 +182,11 @@ class ExperimentHarness:
             settings.routing.enable_fallback = False
             validator = None
             router = AlwaysSmallRouter(routing_settings=settings.routing)
+        elif system_id in ("System_Oracle", "router_oracle"):
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = False
+            validator = create_default_validator()
+            router = OracleRouter(routing_settings=settings.routing, pricing_table=pricing)
         elif system_id == "router_rules":
             settings.routing.enable_cache = True
             settings.routing.enable_fallback = True

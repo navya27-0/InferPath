@@ -8,6 +8,7 @@ from inferpath.router.strategies import (
     BaseRouter,
     ConstraintAwareRouter,
     LearnedRouter,
+    OracleRouter,
 )
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "BaseRouter",
     "ConstraintAwareRouter",
     "LearnedRouter",
+    "OracleRouter",
     "RequestAnalysis",
     "RequestAnalyzer",
     "RuleBasedRouter",

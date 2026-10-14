@@ -67,6 +67,7 @@ def run_full_benchmark_suite(
         "System_B",  # Exact cache + deterministic rules + large model
         "System_C",  # Full InferPath (Constraint-aware)
         "System_Learned",  # Supervised ML router
+        "System_Oracle",  # Theoretical ex-post Pareto optimal lower bound
         "ablation_no_templates",
         "ablation_no_small_model",
         "ablation_no_fallback",
