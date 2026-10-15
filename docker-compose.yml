@@ -4,8 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: inferpath-api
+    # Localhost binding by default (127.0.0.1) prevents unauthenticated network exposure in local-demo mode.
+    # Set INFERPATH_HOST_BIND=0.0.0.0 only when INFERPATH_DEPLOYMENT_MODE=protected with a strong INFERPATH_API_KEY.
     ports:
-      - "8000:8000"
+      - "${INFERPATH_HOST_BIND:-127.0.0.1}:8000:8000"
     environment:
       - ADAPTER_MODE=${ADAPTER_MODE:-simulated}
       - ENVIRONMENT=${ENVIRONMENT:-production}
@@ -28,7 +30,7 @@ services:
       dockerfile: Dockerfile
     container_name: inferpath-dashboard
     ports:
-      - "8501:8501"
+      - "${INFERPATH_HOST_BIND:-127.0.0.1}:8501:8501"
     environment:
       - INFERPATH_API_URL=http://api:8000
       - INFERPATH_API_KEY=${INFERPATH_API_KEY:-}

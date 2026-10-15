@@ -63,15 +63,26 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
     OUTPUT_REAL_DIR.mkdir(parents=True, exist_ok=True)
     budget_tracker = RunBudgetTracker(max_budget_usd=max_budget_usd)
 
+    # Use explicit empirical judge for real-provider evaluation
+    from inferpath.evaluation.judge import OpenRouterJudge
+
+    judge = OpenRouterJudge(
+        judge_model_id=settings.openrouter.small_model,
+        api_key=api_key,
+        base_url=settings.openrouter.base_url,
+    )
+
     harness = ExperimentHarness(
         adapter_mode="real",
         output_base_dir=OUTPUT_REAL_DIR,
         q_min=0.70,
+        judge=judge,
         budget_tracker=budget_tracker,
     )
 
     systems_to_test = ["System_Small", "System_C", "System_A"]
     summary_results = []
+    failed_systems: list[str] = []
 
     for sys_id in systems_to_test:
         print(f"\n--> Executing live run for: {sys_id} ({len(sample_items)} items)...")
@@ -104,6 +115,7 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
             )
         except Exception as e:
             print(f"    Failed execution for {sys_id}: {e}")
+            failed_systems.append(sys_id)
 
     summary_file = OUTPUT_REAL_DIR / "real_pilot_summary.json"
     with open(summary_file, "w", encoding="utf-8") as f:
@@ -114,6 +126,9 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
                 "total_dev_items": len(dev_items),
                 "is_partial_comparison": len(sample_items) < len(dev_items),
                 "adapter_mode": "real",
+                "quality_assessment_method": f"OpenRouterJudge ({settings.openrouter.small_model})",
+                "judge_provenance": "measured",
+                "failed_systems": failed_systems,
                 "results": summary_results,
             },
             f,
@@ -123,6 +138,11 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
     print(
         f"Safety budget total tracked: ${budget_tracker.total_spent_usd:.5f} (limit: ${max_budget_usd:.2f})"
     )
+
+    if failed_systems:
+        print(f"\nERROR: Live evaluation encountered failures for systems: {failed_systems}")
+        return 1
+
     return 0
 
 

@@ -99,12 +99,14 @@ class ExperimentHarness:
         q_min: float = 0.70,
         judge: LLMJudge | None = None,
         budget_tracker: RunBudgetTracker | None = None,
+        include_raw_prompts: bool = False,
     ):
         self.adapter_mode = adapter_mode
         self.q_min = q_min
         self.judge = judge or MockJudge()
         self.is_real_judge = judge is not None and not isinstance(judge, MockJudge)
         self.budget_tracker = budget_tracker
+        self.include_raw_prompts = include_raw_prompts
 
         # Strict directory separation between simulated and real experiments
         if output_base_dir:
@@ -552,8 +554,15 @@ class ExperimentHarness:
 
             is_public = item.privacy_class == PrivacyClass.PUBLIC
             prompt_sha256 = hashlib.sha256(item.prompt.encode("utf-8")).hexdigest()
-            prompt_text = item.prompt if is_public else "[REDACTED_CONFIDENTIAL]"
-            resp_text = res.final_output if is_public else "[REDACTED_CONFIDENTIAL]"
+            if not is_public:
+                prompt_text = "[REDACTED_CONFIDENTIAL]"
+                resp_text = "[REDACTED_CONFIDENTIAL]"
+            elif not self.include_raw_prompts:
+                prompt_text = "[REDACTED_PROMPT]"
+                resp_text = res.final_output
+            else:
+                prompt_text = item.prompt
+                resp_text = res.final_output
 
             item_logs.append(
                 {

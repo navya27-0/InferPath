@@ -83,7 +83,7 @@ Construct validity examines whether our quantitative evaluation metrics faithful
 - **Analysis**:
   - Strict programmatic checkers can penalize semantically flawless responses that deviate slightly in formatting (e.g., outputting `"Total: $500"` when the regex expected `"$500"`). This accounts for the relatively low baseline pass rates ($4.4\%$ to $6.2\%$) observed on the challenging pilot dataset.
   - Automated LLM judges may exhibit verbosity bias or alignment preference toward specific prompt structures.
-- **Mitigation**: Automated judges were explicitly calibrated against independent human ratings, establishing high inter-rater reliability ($\kappa = 0.952$).
+- **Mitigation**: InferPath implements a standardized double-blind human review protocol (`generate_blind_human_review_csv`) and quadratic weighted Cohen's kappa scoring (`compute_inter_rater_agreement`). Inter-rater reliability is explicitly reported as "Not Established" pending empirical dual-rater trials, preventing premature or fabricated calibration claims.
 
 ### 4.3 Environmental Proxies vs. Physical Metering
 - **Risk**: Claiming "environmental sustainability" based on token counts and multiplication factors risks construct conflation.

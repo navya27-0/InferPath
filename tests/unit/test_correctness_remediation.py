@@ -359,3 +359,82 @@ def test_settings_environment_variable_fallbacks(monkeypatch):
     assert settings.log_level == "DEBUG"
     assert settings.database_path == "custom_data.db"
     assert settings.routing.max_usd_per_run == 25.0
+
+
+def test_public_prompts_redacted_by_default_in_harness(tmp_path: Path):
+    """Even public prompts are redacted to [REDACTED_PROMPT] by default in serialized logs."""
+    harness = ExperimentHarness(
+        adapter_mode="simulated",
+        output_base_dir=tmp_path / "default_prompt_redaction",
+        include_raw_prompts=False,  # Default
+    )
+
+    public_item = DatasetItem(
+        item_id="item_pub_default_redact",
+        task_family_id="fam_pub",
+        task_category="multi_step_reasoning",
+        tier="moderate",
+        checker_type="exact",
+        split="dev",
+        prompt="Explain the difference between TCP and UDP protocols in detail.",
+        reference_answer="TCP is reliable; UDP is connectionless.",
+        privacy_class=PrivacyClass.PUBLIC,
+        cache_eligibility=True,
+    )
+
+    _, _, logs = harness.run_evaluation(
+        system_id="System_C",
+        items=[public_item],
+        run_index=1,
+    )
+
+    assert logs[0]["prompt"] == "[REDACTED_PROMPT]"
+    assert logs[0]["prompt_sha256"] is not None
+    assert len(logs[0]["prompt_sha256"]) == 64
+
+
+def test_harness_preserves_public_prompts_when_opted_in_but_keeps_confidential_redacted(
+    tmp_path: Path,
+):
+    """When include_raw_prompts=True, public prompts are kept but confidential prompts are strictly redacted."""
+    harness = ExperimentHarness(
+        adapter_mode="simulated",
+        output_base_dir=tmp_path / "opt_in_prompt_logging",
+        include_raw_prompts=True,
+    )
+
+    items = [
+        DatasetItem(
+            item_id="item_pub",
+            task_family_id="fam_pub",
+            task_category="multi_step_reasoning",
+            tier="moderate",
+            checker_type="exact",
+            split="dev",
+            prompt="Public query on data structures.",
+            reference_answer="Arrays and linked lists.",
+            privacy_class=PrivacyClass.PUBLIC,
+            cache_eligibility=True,
+        ),
+        DatasetItem(
+            item_id="item_conf",
+            task_family_id="fam_conf",
+            task_category="multi_step_reasoning",
+            tier="moderate",
+            checker_type="exact",
+            split="dev",
+            prompt="Confidential internal financial audit details.",
+            reference_answer="Audited.",
+            privacy_class=PrivacyClass.CONFIDENTIAL_PRIVATE,
+            cache_eligibility=False,
+        ),
+    ]
+
+    _, _, logs = harness.run_evaluation(
+        system_id="System_C",
+        items=items,
+        run_index=1,
+    )
+
+    assert logs[0]["prompt"] == "Public query on data structures."
+    assert logs[1]["prompt"] == "[REDACTED_CONFIDENTIAL]"

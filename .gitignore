@@ -55,6 +55,10 @@ data/storage/*.db
 data/logs/*.jsonl
 !data/logs/.gitkeep
 
+# Evaluation run logs (preserve manifests and summary metadata)
+data/results/**/logs_*.json
+
+
 # IDE and OS
 .vscode/
 .idea/
