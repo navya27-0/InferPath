@@ -7,7 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src:/app \
     ADAPTER_MODE=simulated \
-    ENVIRONMENT=production
+    ENVIRONMENT=production \
+    INFERPATH_DEPLOYMENT_MODE=local-demo
 
 WORKDIR /app
 

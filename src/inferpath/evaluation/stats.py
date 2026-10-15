@@ -4,7 +4,7 @@ import math
 import random
 from collections.abc import Sequence
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class BootstrapCI(BaseModel):
@@ -192,6 +192,82 @@ def compute_cliffs_delta(sample_a: Sequence[float], sample_b: Sequence[float]) -
         interp = "large"
 
     return round(float(d), 4), interp
+
+
+class PairedEffectSizeResult(BaseModel):
+    """Encapsulates paired per-item effect size and missing observation telemetry."""
+
+    paired_n: int = Field(description="Number of valid paired observations")
+    missing_observations: int = Field(description="Number of items missing from either system")
+    missing_items: list[str] = Field(default_factory=list, description="IDs of unmatched items")
+    cliffs_delta: float = Field(description="Paired Cliff's delta effect size")
+    interpretation: str = Field(description="negligible / small / medium / large")
+    paired_difference_mean: float = Field(
+        description="Mean per-item difference (sample_a - sample_b)"
+    )
+    paired_difference_median: float = Field(
+        description="Median per-item difference (sample_a - sample_b)"
+    )
+
+
+def compute_paired_per_item_comparison(
+    item_scores_a: dict[str, float],
+    item_scores_b: dict[str, float],
+    all_item_ids: Sequence[str] | None = None,
+) -> PairedEffectSizeResult:
+    """Computes paired per-item comparison between two systems across matching benchmark items.
+
+    Replaces three-run aggregate comparisons with genuine per-item paired analysis.
+    Explicitly accounts for and reports missing observations.
+    """
+    if all_item_ids is None:
+        target_keys = sorted(set(item_scores_a.keys()).union(set(item_scores_b.keys())))
+    else:
+        target_keys = list(all_item_ids)
+
+    paired_a: list[float] = []
+    paired_b: list[float] = []
+    missing_items: list[str] = []
+
+    for k in target_keys:
+        if k in item_scores_a and k in item_scores_b:
+            paired_a.append(item_scores_a[k])
+            paired_b.append(item_scores_b[k])
+        else:
+            missing_items.append(k)
+
+    if not paired_a:
+        return PairedEffectSizeResult(
+            paired_n=0,
+            missing_observations=len(missing_items),
+            missing_items=missing_items,
+            cliffs_delta=0.0,
+            interpretation="negligible",
+            paired_difference_mean=0.0,
+            paired_difference_median=0.0,
+        )
+
+    delta, interp = compute_cliffs_delta(paired_a, paired_b)
+
+    diffs = [a - b for a, b in zip(paired_a, paired_b, strict=True)]
+    diff_mean = sum(diffs) / len(diffs)
+    sorted_diffs = sorted(diffs)
+    n = len(diffs)
+    diff_med = (
+        sorted_diffs[n // 2]
+        if n % 2 == 1
+        else (sorted_diffs[n // 2 - 1] + sorted_diffs[n // 2]) / 2.0
+    )
+
+    return PairedEffectSizeResult(
+        paired_n=len(paired_a),
+        missing_observations=len(missing_items),
+        missing_items=missing_items,
+        cliffs_delta=delta,
+        interpretation=interp,
+        paired_difference_mean=round(diff_mean, 6),
+        paired_difference_median=round(diff_med, 6),
+    )
 
 
 def compute_repeated_run_summary(values: Sequence[float]) -> RunSummaryStats:

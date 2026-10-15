@@ -34,7 +34,7 @@ Internal validity addresses whether the observed effects (cost reduction, latenc
 ### 2.2 Cache Hit Sensitivity and Workload Ordering
 - **Risk**: Cache performance is highly sensitive to the order and repetition structure of the input query stream.
 - **Confounding Factors**:
-  - The evaluated 160-item `dev` split contains structured query repeats within specific task families, yielding a 14.4% to 21.9% cold hit rate and a 59.4% warm hit rate. In production environments with purely unique, non-repeating long-tail prompts, exact cache hit rates may approach 0%.
+  - The evaluated 160-item `dev` split contains structured query repeats within specific task families, yielding a 16.2% cold hit rate (20.3% eligible) and a 66.2% warm hit rate (82.8% eligible). In production environments with purely unique, non-repeating long-tail prompts, exact cache hit rates may approach 0%.
   - Exact SHA-256 canonical hashing requires character-exact parameter and prompt matches. A single trailing whitespace character or timestamp variation bypasses the cache entirely.
 - **Mitigation**: The ablation study explicitly tested `ablation_no_cache` to isolate the router's economic performance in the total absence of cache hits ($84.0\%$ cost reduction maintained purely via Tier A, B, and C routing).
 

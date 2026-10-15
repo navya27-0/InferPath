@@ -7,9 +7,12 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ADAPTER_MODE=simulated
-      - ENVIRONMENT=production
-      - OPENROUTER_API_KEY=""
+      - ADAPTER_MODE=${ADAPTER_MODE:-simulated}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - INFERPATH_ENVIRONMENT=${INFERPATH_ENVIRONMENT:-production}
+      - INFERPATH_DEPLOYMENT_MODE=${INFERPATH_DEPLOYMENT_MODE:-local-demo}
+      - INFERPATH_API_KEY=${INFERPATH_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     command: ["uvicorn", "inferpath.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -28,8 +31,10 @@ services:
       - "8501:8501"
     environment:
       - INFERPATH_API_URL=http://api:8000
-      - ADAPTER_MODE=simulated
-      - ENVIRONMENT=production
+      - INFERPATH_API_KEY=${INFERPATH_API_KEY:-}
+      - ADAPTER_MODE=${ADAPTER_MODE:-simulated}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - INFERPATH_ENVIRONMENT=${INFERPATH_ENVIRONMENT:-production}
     command: ["streamlit", "run", "app/dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
     depends_on:
       api:

@@ -4,7 +4,6 @@ import hashlib
 import json
 import platform
 import sys
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -99,10 +98,13 @@ class ExperimentHarness:
         output_base_dir: Path | str | None = None,
         q_min: float = 0.70,
         judge: LLMJudge | None = None,
+        budget_tracker: RunBudgetTracker | None = None,
     ):
         self.adapter_mode = adapter_mode
         self.q_min = q_min
         self.judge = judge or MockJudge()
+        self.is_real_judge = judge is not None and not isinstance(judge, MockJudge)
+        self.budget_tracker = budget_tracker
 
         # Strict directory separation between simulated and real experiments
         if output_base_dir:
@@ -121,6 +123,7 @@ class ExperimentHarness:
         budget_tracker: RunBudgetTracker | None = None,
     ) -> RequestPipeline:
         """Instantiates RequestPipeline configured specifically for the target system or ablation."""
+        bt = budget_tracker if budget_tracker is not None else self.budget_tracker
         settings = load_settings()
         settings.database_path = cache_db_path
         pricing = load_pricing_table()
@@ -135,13 +138,13 @@ class ExperimentHarness:
                 model_id=settings.openrouter.small_model,
                 pricing_table=pricing,
                 api_key=settings.openrouter.api_key,
-                budget_tracker=budget_tracker,
+                budget_tracker=bt,
             )
             large_adapter = OpenRouterAdapter(
                 model_id=settings.openrouter.large_model,
                 pricing_table=pricing,
                 api_key=settings.openrouter.api_key,
-                budget_tracker=budget_tracker,
+                budget_tracker=bt,
             )
         else:
             small_adapter = MockSmallModel()
@@ -248,7 +251,7 @@ class ExperimentHarness:
             validator=validator,
             small_adapter=small_adapter,
             large_adapter=large_adapter,
-            budget_tracker=budget_tracker,
+            budget_tracker=bt,
         )
 
         return pipe
@@ -269,10 +272,12 @@ class ExperimentHarness:
             if not ok:
                 raise RuntimeError(f"Test execution locked: {msg}")
 
-        run_id = f"run_{system_id}_{split}_{run_index}_{uuid.uuid4().hex[:6]}"
+        run_id = f"run_{system_id}_{split}_{run_index}"
         db_path = str(self.base_dir / f"cache_{run_id}.db")
 
-        pipeline = self._create_pipeline_for_system(system_id=system_id, cache_db_path=db_path)
+        pipeline = self._create_pipeline_for_system(
+            system_id=system_id, cache_db_path=db_path, budget_tracker=self.budget_tracker
+        )
         oracle_eval = OracleEvaluator(pipeline=pipeline, q_min=self.q_min, judge=self.judge)
 
         # Set explicit reproducible random seed for evaluation
@@ -309,7 +314,10 @@ class ExperimentHarness:
             # System execution overrides for baselines
             if system_id == "System_A":
                 # Bypass rules/templates/small model; force Large Model D if eligible
-                if item.privacy_class != PrivacyClass.PUBLIC:
+                can_tx, _ = pipeline.privacy_enforcer.can_transmit_externally(
+                    req, RouteTier.LARGE_MODEL_D
+                )
+                if not can_tx:
                     decision = RoutingDecision(
                         selected_tier=RouteTier.DETERMINISTIC_A,
                         rule_id="R01",
@@ -354,9 +362,12 @@ class ExperimentHarness:
                 )
             elif system_id == "System_B":
                 # System B Baseline: Exact Cache + Local Tier A (arithmetic/conversion) + Frontier Tier D
+                can_tx_b, _ = pipeline.privacy_enforcer.can_transmit_externally(
+                    req, RouteTier.LARGE_MODEL_D
+                )
                 if item.task_category == "arithmetic_and_unit_conversion":
                     decision = pipeline.router.route(req)
-                elif item.privacy_class != PrivacyClass.PUBLIC:
+                elif not can_tx_b:
                     decision = RoutingDecision(
                         selected_tier=RouteTier.DETERMINISTIC_A,
                         rule_id="R01",
@@ -632,6 +643,8 @@ class ExperimentHarness:
                 "python_version": sys.version,
                 "platform": platform.platform(),
                 "node": platform.node(),
+                "judge_type": "LLMJudge" if self.is_real_judge else "MockJudge",
+                "judge_provenance": "measured" if self.is_real_judge else "simulated",
             },
             summary_metrics=summary,
         )

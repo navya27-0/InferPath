@@ -30,7 +30,7 @@ The evaluation rigorously tests five candidate routing architectures (**System A
 **Verdict: YES.**
 - **Route Distribution**: Requests were distributed appropriately across Deterministic Rules (Tier A), Structured Templates (Tier B), Small Model (Tier C), and Large Model (Tier D).
 - **Privacy Enforcement**: 100% of confidential and internal requests were intercepted before reaching external model adapters (`privacy_violations = 0`).
-- **Cache Engine**: The canonical hash cache achieved a **21.9% hit rate on cold runs** (intra-batch repeats) and a **59.4% hit rate on warm runs**, with **zero inappropriate hits** across all runs.
+- **Cache Engine**: The canonical hash cache achieved a **16.2% overall hit rate on cold runs** (20.3% eligible-only) and a **66.2% overall hit rate on warm runs** (82.8% eligible-only), with **zero inappropriate hits** across all runs.
 - **Bounded Fallback**: One-level fallback (Tier C $\to$ Tier D) successfully triggered on 4.4% of requests when output validation failed, rescuing degraded candidate outputs.
 
 ### RQ2: Is InferPath Measurably Cheaper Than Conventional Routing?
@@ -85,10 +85,10 @@ The dual-panel figure below shows the Cost-Quality and Latency-Quality trade-off
 
 The cache engine was benchmarked independently under isolated cold-cache and warm-cache workloads:
 
-- **Cold Cache Hit Rate**: **21.9%** (intra-batch repeats from identical queries in test families)
-- **Warm Cache Hit Rate**: **59.4%** (sustained query repeat workloads)
+- **Cold Cache Hit Rate**: **16.2% overall** (20.3% eligible-only from intra-batch repeats)
+- **Warm Cache Hit Rate**: **66.2% overall** (82.8% eligible-only on sustained repeat workloads)
 - **Inappropriate Hits**: **0** (zero cache-ineligible, private, or time-sensitive queries served from cache)
-- **Cost Savings**: **.01590** saved on a single 160-item evaluation pass
+- **Cost Savings**: **$0.01590** saved on a single 160-item evaluation pass
 
 ---
 

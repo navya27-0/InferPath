@@ -15,7 +15,7 @@ This guide provides precise, high-impact resume phrasing, STAR-method interview 
 ### Option B: ML Systems & Backend Platform Engineer
 - Developed a high-throughput AI gateway and routing framework processing 46+ concurrent requests per second with $<20$ ms median latency and 100% reliability under concurrent stress testing.
 - Integrated OpenRouter API adapters with non-blocking asynchronous I/O, bounded single-level fallback (Tier C $\to$ Tier D), and AST-based deterministic execution for arithmetic, unit conversions, and date formatting.
-- Designed a non-blocking canonical exact-response cache backed by `aiosqlite`, achieving a 59.4% warm hit rate and zero inappropriate cache hits for volatile or private queries.
+- Designed a non-blocking canonical exact-response cache backed by `aiosqlite`, achieving a 66.2% warm hit rate (82.8% eligible-only) and zero inappropriate cache hits for volatile or private queries.
 - Deployed a full-stack research dashboard in Streamlit visualizing real-time routing regret, Pareto efficiency frontiers, failure taxonomy, and Scope 2 environmental footprint estimations.
 
 ### Option C: Research Engineer / Applied AI Scientist

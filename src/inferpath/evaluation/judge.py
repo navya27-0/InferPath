@@ -1,7 +1,7 @@
 """LLM Judge interface and mock/real implementations for InferPath evaluation."""
 
 import time
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,7 @@ class JudgeEvaluationResult(BaseModel):
     rubric_version: str = Field(default="1.0.0")
 
 
+@runtime_checkable
 class LLMJudge(Protocol):
     """Protocol for LLM Judge implementations."""
 

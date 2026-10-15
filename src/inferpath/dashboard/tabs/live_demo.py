@@ -81,9 +81,15 @@ def render_live_demo_tab():
             },
         }
 
+        # Support protected deployment authentication
+        api_key = os.environ.get("INFERPATH_API_KEY", "").strip()
+        headers = {"X-API-Key": api_key} if api_key else {}
+
         with st.spinner("Dispatching through InferPath pipeline..."):
             try:
-                resp = httpx.post(f"{api_url}/v1/respond", json=payload, timeout=12.0)
+                resp = httpx.post(
+                    f"{api_url}/v1/respond", json=payload, headers=headers, timeout=12.0
+                )
             except httpx.ConnectError:
                 st.error(
                     f"⚠️ **FastAPI Server Offline**: Could not connect to InferPath service at `{api_url}`. "
@@ -100,6 +106,15 @@ def render_live_demo_tab():
                 st.error(f"❌ **Connection Error**: {err}")
                 return
 
+        if resp.status_code == 401:
+            err_data = resp.json() if resp.headers.get("content-type") == "application/json" else {}
+            render_banner(
+                f"🔒 **AUTHENTICATION REQUIRED (HTTP 401)**: {err_data.get('detail', 'Unauthorized')}. "
+                "The InferPath API is operating in protected mode. Set `INFERPATH_API_KEY` in your environment.",
+                level="warning",
+            )
+            return
+
         if resp.status_code == 403:
             err_data = resp.json()
             render_banner(
@@ -113,6 +128,16 @@ def render_live_demo_tab():
             err_data = resp.json()
             render_banner(
                 f"💰 **BUDGET EXCEEDED (HTTP 402)**: {err_data.get('detail', 'Run budget cap exceeded')}.",
+                level="warning",
+            )
+            return
+
+        if resp.status_code == 422:
+            err_data = resp.json() if resp.headers.get("content-type") == "application/json" else {}
+            unsatisfied = err_data.get("unsatisfied_constraints", [])
+            render_banner(
+                f"⚠️ **CONSTRAINTS UNSATISFIABLE (HTTP 422)**: {err_data.get('error', 'Constraints could not be satisfied')}. "
+                f"Unsatisfied: {', '.join(unsatisfied) if unsatisfied else 'None qualifying'}. No model was executed.",
                 level="warning",
             )
             return

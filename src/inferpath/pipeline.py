@@ -352,6 +352,38 @@ class RequestPipeline:
                     can_fallback = False
                     route_trace.append({"step": "fallback_blocked", "reason": "budget_exhaustion"})
 
+            # Caller constraints and eligibility check for fallback
+            if can_fallback:
+                if (
+                    decision.eligible_tiers
+                    and RouteTier.LARGE_MODEL_D not in decision.eligible_tiers
+                ):
+                    can_fallback = False
+                    route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
+                elif request.task_parameters.maximum_cost_usd is not None:
+                    est_cost = (
+                        self.budget_tracker.estimate_call_cost(
+                            self.large_adapter.model_id,
+                            request.prompt,
+                            request.task_parameters.max_tokens,
+                        )
+                        if self.budget_tracker
+                        else 0.005
+                    )
+                    if est_cost > request.task_parameters.maximum_cost_usd:
+                        can_fallback = False
+                        route_trace.append(
+                            {"step": "fallback_blocked", "reason": "user_budget_constraint"}
+                        )
+                elif (
+                    request.task_parameters.maximum_latency_ms is not None
+                    and request.task_parameters.maximum_latency_ms < 250.0
+                ):
+                    can_fallback = False
+                    route_trace.append(
+                        {"step": "fallback_blocked", "reason": "user_latency_constraint"}
+                    )
+
             if can_fallback:
                 fb_rec = FallbackRecord(
                     from_tier=RouteTier.SMALL_MODEL_C,
@@ -651,6 +683,38 @@ class RequestPipeline:
                 if est_d_cost > self.budget_tracker.remaining_budget:
                     can_fallback = False
                     route_trace.append({"step": "fallback_blocked", "reason": "budget_exhaustion"})
+
+            # Caller constraints and eligibility check for fallback
+            if can_fallback:
+                if (
+                    decision.eligible_tiers
+                    and RouteTier.LARGE_MODEL_D not in decision.eligible_tiers
+                ):
+                    can_fallback = False
+                    route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
+                elif request.task_parameters.maximum_cost_usd is not None:
+                    est_cost = (
+                        self.budget_tracker.estimate_call_cost(
+                            self.large_adapter.model_id,
+                            request.prompt,
+                            request.task_parameters.max_tokens,
+                        )
+                        if self.budget_tracker
+                        else 0.005
+                    )
+                    if est_cost > request.task_parameters.maximum_cost_usd:
+                        can_fallback = False
+                        route_trace.append(
+                            {"step": "fallback_blocked", "reason": "user_budget_constraint"}
+                        )
+                elif (
+                    request.task_parameters.maximum_latency_ms is not None
+                    and request.task_parameters.maximum_latency_ms < 250.0
+                ):
+                    can_fallback = False
+                    route_trace.append(
+                        {"step": "fallback_blocked", "reason": "user_latency_constraint"}
+                    )
 
             if can_fallback:
                 fb_rec = FallbackRecord(

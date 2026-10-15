@@ -43,6 +43,7 @@ def load_human_review_csv(csv_path: Path | str) -> list[HumanReviewRecord]:
     """Loads and validates human review records from a populated review CSV.
 
     Ignores uncompleted template rows where scores are empty.
+    Validates rating values (1 to 5) and rating provenance (e.g. measured).
     """
     path = Path(csv_path)
     if not path.exists():
@@ -52,24 +53,27 @@ def load_human_review_csv(csv_path: Path | str) -> list[HumanReviewRecord]:
     with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            prov = row.get("provenance", "measured").strip().lower() or "measured"
+
             # Check candidate A score
             score_a_str = row.get("score_a_1_to_5", "").strip()
             if score_a_str:
                 try:
                     s_a = int(float(score_a_str))
-                    records.append(
-                        HumanReviewRecord(
-                            review_id=f"{row.get('review_id', 'REV')}_A",
-                            item_id=row.get("item_id", ""),
-                            reviewer_id=row.get("reviewer_id", "anonymous"),
-                            candidate_id="candidate_a",
-                            score=s_a,
-                            rubric_version="1.0.0",
-                            provenance="measured",
-                            rationale=row.get("rationale"),
-                            disagreement_notes=row.get("disagreement_notes"),
+                    if 1 <= s_a <= 5:
+                        records.append(
+                            HumanReviewRecord(
+                                review_id=f"{row.get('review_id', 'REV')}_A",
+                                item_id=row.get("item_id", ""),
+                                reviewer_id=row.get("reviewer_id", "anonymous"),
+                                candidate_id="candidate_a",
+                                score=s_a,
+                                rubric_version="1.0.0",
+                                provenance=prov,
+                                rationale=row.get("rationale"),
+                                disagreement_notes=row.get("disagreement_notes"),
+                            )
                         )
-                    )
                 except (ValueError, TypeError):
                     pass
 
@@ -78,19 +82,20 @@ def load_human_review_csv(csv_path: Path | str) -> list[HumanReviewRecord]:
             if score_b_str:
                 try:
                     s_b = int(float(score_b_str))
-                    records.append(
-                        HumanReviewRecord(
-                            review_id=f"{row.get('review_id', 'REV')}_B",
-                            item_id=row.get("item_id", ""),
-                            reviewer_id=row.get("reviewer_id", "anonymous"),
-                            candidate_id="candidate_b",
-                            score=s_b,
-                            rubric_version="1.0.0",
-                            provenance="measured",
-                            rationale=row.get("rationale"),
-                            disagreement_notes=row.get("disagreement_notes"),
+                    if 1 <= s_b <= 5:
+                        records.append(
+                            HumanReviewRecord(
+                                review_id=f"{row.get('review_id', 'REV')}_B",
+                                item_id=row.get("item_id", ""),
+                                reviewer_id=row.get("reviewer_id", "anonymous"),
+                                candidate_id="candidate_b",
+                                score=s_b,
+                                rubric_version="1.0.0",
+                                provenance=prov,
+                                rationale=row.get("rationale"),
+                                disagreement_notes=row.get("disagreement_notes"),
+                            )
                         )
-                    )
                 except (ValueError, TypeError):
                     pass
 
@@ -104,6 +109,7 @@ def compute_inter_rater_agreement(
 
     If genuine dual ratings are unavailable, explicitly reports that agreement
     has not yet been established rather than fabricating numbers.
+    Strictly verifies that rating input values are valid and provenance is measured.
     """
     if not records:
         return {
@@ -112,6 +118,28 @@ def compute_inter_rater_agreement(
             "human_judge_kappa": None,
             "sample_size": 0,
             "message": "No empirical human review records available.",
+        }
+
+    # Verify rating provenance: empirical inter-rater agreement strictly requires measured provenance
+    non_measured = [r for r in records if r.provenance != "measured"]
+    if non_measured:
+        return {
+            "status": "unverified_provenance",
+            "human_human_kappa": None,
+            "human_judge_kappa": None,
+            "sample_size": len(records),
+            "message": f"Found {len(non_measured)} ratings with non-measured provenance ('{non_measured[0].provenance}'). Empirical agreement requires measured ratings.",
+        }
+
+    # Verify rating score bounds
+    invalid_scores = [r for r in records if not (isinstance(r.score, int) and 1 <= r.score <= 5)]
+    if invalid_scores:
+        return {
+            "status": "invalid_ratings",
+            "human_human_kappa": None,
+            "human_judge_kappa": None,
+            "sample_size": len(records),
+            "message": f"Found {len(invalid_scores)} ratings with out-of-bounds scores.",
         }
 
     # Group ratings by (item_id, candidate_id) -> {reviewer_id: score}

@@ -143,6 +143,24 @@ class Settings(BaseSettings):
     openrouter: OpenRouterSettings = Field(default_factory=OpenRouterSettings)
     routing: RoutingSettings = Field(default_factory=RoutingSettings)
 
+    @model_validator(mode="before")
+    @classmethod
+    def apply_env_fallbacks(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "environment" not in data:
+                env = os.getenv("INFERPATH_ENVIRONMENT") or os.getenv("ENVIRONMENT")
+                if env:
+                    data["environment"] = env
+            if "database_path" not in data:
+                db = os.getenv("INFERPATH_DATABASE_PATH") or os.getenv("DATABASE_PATH")
+                if db:
+                    data["database_path"] = db
+            if "log_level" not in data:
+                lvl = os.getenv("INFERPATH_LOG_LEVEL") or os.getenv("LOG_LEVEL")
+                if lvl:
+                    data["log_level"] = lvl
+        return data
+
 
 def load_settings(base_dir: Path | None = None) -> Settings:
     """Loads root configuration, populating OpenRouter API key from .env."""
@@ -194,10 +212,22 @@ def load_settings(base_dir: Path | None = None) -> Settings:
     if env_api_key:
         settings.openrouter.api_key = env_api_key
 
-    env_budget = os.getenv("MAX_USD_PER_RUN")
+    env_budget = os.getenv("MAX_USD_PER_RUN") or os.getenv("INFERPATH_MAX_USD_PER_RUN")
     if env_budget:
         with contextlib.suppress(ValueError):
             settings.routing.max_usd_per_run = float(env_budget)
+
+    env_environment = os.getenv("INFERPATH_ENVIRONMENT") or os.getenv("ENVIRONMENT")
+    if env_environment:
+        settings.environment = env_environment
+
+    env_log_level = os.getenv("INFERPATH_LOG_LEVEL") or os.getenv("LOG_LEVEL")
+    if env_log_level:
+        settings.log_level = env_log_level
+
+    env_db = os.getenv("INFERPATH_DATABASE_PATH") or os.getenv("DATABASE_PATH")
+    if env_db:
+        settings.database_path = env_db
 
     return settings
 
@@ -302,3 +332,7 @@ def load_carbon_coefficients(config_path: Path | None = None) -> CarbonBoundConf
         coefficients_per_1000_tokens=coeff_assumptions,
         water_intensity=water_assumption,
     )
+
+
+# Alias for backward and framework naming compatibility
+InferPathSettings = Settings

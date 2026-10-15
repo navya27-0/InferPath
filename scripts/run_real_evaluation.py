@@ -67,6 +67,7 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
         adapter_mode="real",
         output_base_dir=OUTPUT_REAL_DIR,
         q_min=0.70,
+        budget_tracker=budget_tracker,
     )
 
     systems_to_test = ["System_Small", "System_C", "System_A"]
@@ -110,6 +111,8 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
             {
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "sample_size": len(sample_items),
+                "total_dev_items": len(dev_items),
+                "is_partial_comparison": len(sample_items) < len(dev_items),
                 "adapter_mode": "real",
                 "results": summary_results,
             },

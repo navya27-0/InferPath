@@ -20,8 +20,8 @@ from inferpath.evaluation.human_review import (
     generate_blind_human_review_csv,
 )
 from inferpath.evaluation.stats import (
-    compute_cliffs_delta,
     compute_clustered_bootstrap_ci,
+    compute_paired_per_item_comparison,
     compute_repeated_run_summary,
 )
 
@@ -171,7 +171,19 @@ def run_full_benchmark_suite(
     # 5. Statistical Aggregations across runs
     print("\n--> Computing Statistical Aggregations & Effect Sizes...")
     table_rows: list[dict[str, Any]] = []
-    base_c_costs = [s.total_cost_usd_calculated for s in all_summaries["System_C"]]
+    # Precompute per-item average costs for reference System C
+    sys_c_logs = all_system_logs.get("System_C", [])
+    item_costs_c: dict[str, float] = {}
+    item_cost_lists_c: dict[str, list[float]] = {}
+    for run_logs in sys_c_logs:
+        for log_entry in run_logs:
+            item_cost_lists_c.setdefault(log_entry["item_id"], []).append(
+                log_entry.get("cost_usd_calculated", 0.0)
+            )
+    for itm_id, c_list in item_cost_lists_c.items():
+        item_costs_c[itm_id] = sum(c_list) / len(c_list) if c_list else 0.0
+
+    all_item_ids = [itm.item_id for itm in items]
 
     for sys_id, summaries in all_summaries.items():
         cost_stats = compute_repeated_run_summary([s.total_cost_usd_calculated for s in summaries])
@@ -197,18 +209,35 @@ def run_full_benchmark_suite(
                 item_outcomes.setdefault(itm_id, []).append(pass_val)
 
         family_clusters: dict[str, list[float]] = {}
+        missing_outcomes = 0
         for itm in items:
             passes = item_outcomes.get(itm.item_id, [])
-            avg_item_pass = sum(passes) / len(passes) if passes else 0.0
-            family_clusters.setdefault(itm.task_family_id, []).append(avg_item_pass)
+            if passes:
+                avg_item_pass = sum(passes) / len(passes)
+                family_clusters.setdefault(itm.task_family_id, []).append(avg_item_pass)
+            else:
+                missing_outcomes += 1
 
         bootstrap_ci = compute_clustered_bootstrap_ci(
             family_clusters, n_resamples=1000, confidence_level=0.95, seed=42
         )
 
-        # Effect size relative to full InferPath (System C)
-        curr_costs = [s.total_cost_usd_calculated for s in summaries]
-        cliffs_d, effect_interp = compute_cliffs_delta(base_c_costs, curr_costs)
+        # Paired per-item cost effect size relative to full InferPath (System C)
+        item_costs_sys: dict[str, float] = {}
+        item_cost_lists_sys: dict[str, list[float]] = {}
+        for run_logs in system_runs_logs:
+            for log_entry in run_logs:
+                item_cost_lists_sys.setdefault(log_entry["item_id"], []).append(
+                    log_entry.get("cost_usd_calculated", 0.0)
+                )
+        for itm_id, c_list in item_cost_lists_sys.items():
+            item_costs_sys[itm_id] = sum(c_list) / len(c_list) if c_list else 0.0
+
+        paired_res = compute_paired_per_item_comparison(
+            item_costs_c, item_costs_sys, all_item_ids=all_item_ids
+        )
+        cliffs_d = paired_res.cliffs_delta
+        effect_interp = paired_res.interpretation
 
         # Cost savings relative to System A
         sys_a_cost = sum(s.total_cost_usd_calculated for s in all_summaries["System_A"]) / len(
@@ -233,7 +262,10 @@ def run_full_benchmark_suite(
             "Under_Escalation": f"{under_esc_stats.mean * 100:.1f}%",
             "Energy_Wh": f"{energy_stats.mean:.3f} Wh",
             "Water_mL": f"{water_stats.mean:.3f} mL",
-            "Cost_Effect_vs_C": f"d={cliffs_d:.2f} ({effect_interp})",
+            "Cost_Effect_vs_C": f"d={cliffs_d:.2f} ({effect_interp})"
+            if paired_res.paired_n > 0
+            else "N/A",
+            "Missing_Observations": paired_res.missing_observations,
         }
         table_rows.append(row)
 

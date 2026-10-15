@@ -61,7 +61,7 @@ src/inferpath/dashboard/
 - **Category Breakdown**: Filterable table showing performance across 8 distinct task categories.
 
 ### Tab 3: Exact-Response Cache
-- **Isolated Workloads**: Cold cache (21.9% hit rate from intra-batch repeats) vs. warm cache (59.4% hit rate).
+- **Isolated Workloads**: Cold cache (16.2% overall hit rate, 20.3% eligible from intra-batch repeats) vs. warm cache (66.2% overall hit rate, 82.8% eligible).
 - **Denominator Transparency**: Strict separation of overall hit rate ($Hits / Total$) vs. eligible hit rate ($Hits / Eligible$).
 - **Storage Overhead**: Physical SQLite file size in bytes and entries count on disk (`data/cache.db`).
 - **Bypass Breakdown**: Deterministic local bypass, time-sensitive freshness bypass, and privacy policy interception.

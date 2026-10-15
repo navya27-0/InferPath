@@ -62,7 +62,7 @@ def test_adapter_malformed_response_handling(pricing_table):
 
 def test_circuit_breaker_half_open_failure():
     """In HALF_OPEN state, a single failure must immediately trip breaker back to OPEN."""
-    cb = CircuitBreaker(failure_threshold=2, recovery_timeout_seconds=0.05)
+    cb = CircuitBreaker(failure_threshold=2, recovery_timeout_seconds=0.03)
     cb.record_failure()
     cb.record_failure()
     assert cb.state == "OPEN"
