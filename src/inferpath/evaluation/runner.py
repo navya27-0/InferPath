@@ -10,8 +10,6 @@ from typing import Any
 from inferpath.evaluation.cache_eval import CacheEvaluator
 from inferpath.evaluation.dataset import load_pilot_dataset
 from inferpath.evaluation.freeze_config import (
-    check_git_tree_clean,
-    get_git_commit,
     load_registry,
     register_frozen_config,
 )
@@ -280,8 +278,8 @@ def run_full_benchmark_suite(
     benchmark_bundle = {
         "metadata": {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "git_commit": get_git_commit(),
-            "git_tree_clean": check_git_tree_clean(),
+            "git_commit": harness.git_commit,
+            "git_tree_clean": harness.git_tree_clean,
             "adapter_mode": adapter_mode,
             "split": split,
             "repeats": repeats,

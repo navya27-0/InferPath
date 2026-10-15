@@ -21,7 +21,11 @@ from inferpath.models.enums import PrivacyClass, RouteTier
 from inferpath.router.analyzer import contains_sensitive_patterns
 from inferpath.router.router import RuleBasedRouter
 from inferpath.router.strategies import BaseRouter, RoutingDecision
-from inferpath.security.budget import BudgetExceededError, RunBudgetTracker
+from inferpath.security.budget import (
+    BudgetExceededError,
+    ReservationState,
+    RunBudgetTracker,
+)
 
 # ==============================================================================
 # 1. Close remaining prompt-privacy paths
@@ -252,3 +256,142 @@ def test_load_human_review_csv_defaults_missing_provenance_to_unknown(tmp_path: 
     # Inter-rater agreement should flag unverified provenance
     agreement = compute_inter_rater_agreement(records)
     assert agreement["status"] == "unverified_provenance"
+
+
+# ==============================================================================
+# 5. Guaranteed Live Budget Hard Cap & Over-Reservation Enforcement
+# ==============================================================================
+
+
+def test_budget_tracker_rejects_non_finite_costs():
+    """RunBudgetTracker rejects NaN and Inf values during init, reserve, and reconcile."""
+    with pytest.raises(ValueError, match="finite number"):
+        RunBudgetTracker(max_usd=float("nan"))
+
+    with pytest.raises(ValueError, match="finite number"):
+        RunBudgetTracker(max_usd=float("inf"))
+
+    tracker = RunBudgetTracker(max_usd=1.0)
+    with pytest.raises(ValueError, match="finite number"):
+        tracker.reserve(float("nan"))
+
+    with pytest.raises(ValueError, match="finite number"):
+        tracker.reserve(float("inf"))
+
+    token = tracker.reserve(0.05)
+    with pytest.raises(ValueError, match="finite number"):
+        tracker.reconcile(token, float("nan"))
+
+    with pytest.raises(ValueError, match="finite number"):
+        tracker.reconcile(token, float("inf"))
+
+    with pytest.raises(ValueError, match="cannot be negative"):
+        tracker.reconcile(token, -0.01)
+
+
+def test_reconcile_enforces_hard_cap_and_records_exceeded_state():
+    """reconcile() raises BudgetExceededError and marks state EXCEEDED when actual spend breaches cap."""
+    tracker = RunBudgetTracker(max_usd=0.01)
+    tok = tracker.reserve(0.005)
+    assert tracker.reserved_usd == pytest.approx(0.005)
+
+    # Actual cost comes back higher than remaining cap ($0.015 > $0.01)
+    with pytest.raises(BudgetExceededError) as exc_info:
+        tracker.reconcile(tok, 0.015)
+
+    assert "exceed run budget cap" in str(exc_info.value)
+    assert tracker.spent_usd == pytest.approx(0.015)
+    assert tracker.remaining_budget == 0.0
+
+    # Audit view must record EXCEEDED state
+    audit = tracker._reservations
+    assert tok in audit
+    assert audit[tok]["state"] == ReservationState.EXCEEDED
+    assert audit[tok]["cost"] == 0.015
+
+
+def test_openrouter_judge_payload_bounds_max_tokens():
+    """OpenRouterJudge explicitly bounds completion tokens in payload to 256 matching reservation."""
+    tracker = RunBudgetTracker(max_usd=1.0)
+    judge = OpenRouterJudge(
+        judge_model_id="openai/gpt-4o-mini",
+        api_key="test-key-mock",
+        budget_tracker=tracker,
+    )
+
+    item = DatasetItem(
+        item_id="it_bounds_1",
+        prompt="Explain quantum tunneling.",
+        ground_truth="GT",
+        task_family_id="tf_1",
+        task_category="short_explanations",
+        tier="difficult",
+        checker_type="exact",
+        split="dev",
+        privacy_class=PrivacyClass.PUBLIC,
+        quality_criteria=["Physical accuracy"],
+    )
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": '{"score": 0.9, "rationale": "Clear"}'}}],
+        "usage": {"prompt_tokens": 40, "completion_tokens": 30, "cost": 0.00003},
+    }
+
+    with patch("httpx.Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        judge.evaluate(item, "Quantum tunneling is a quantum mechanical phenomenon...")
+
+        assert mock_client.post.called
+        post_kwargs = mock_client.post.call_args[1]
+        sent_payload = post_kwargs["json"]
+        assert sent_payload.get("max_tokens") == 256, (
+            f"Expected max_tokens: 256 in OpenRouter payload, got {sent_payload.get('max_tokens')}"
+        )
+
+
+def test_openrouter_judge_raises_on_reconcile_over_cap():
+    """OpenRouterJudge propagates BudgetExceededError when reconciled provider cost breaches hard cap."""
+    tracker = RunBudgetTracker(max_usd=0.01)
+    judge = OpenRouterJudge(
+        judge_model_id="openai/gpt-4o-mini",
+        api_key="test-key-mock",
+        budget_tracker=tracker,
+    )
+
+    item = DatasetItem(
+        item_id="it_over_1",
+        prompt="Explain relativity.",
+        ground_truth="GT",
+        task_family_id="tf_1",
+        task_category="short_explanations",
+        tier="difficult",
+        checker_type="exact",
+        split="dev",
+        privacy_class=PrivacyClass.PUBLIC,
+        quality_criteria=["Physical accuracy"],
+    )
+
+    # Reservation estimates ~0.005 (covered by $0.01 cap).
+    # Reported cost in usage exceeds the run budget cap ($0.02 > $0.01).
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": '{"score": 0.9, "rationale": "Clear"}'}}],
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50, "cost": 0.02},
+    }
+
+    with patch("httpx.Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        with pytest.raises(BudgetExceededError) as exc_info:
+            judge.evaluate(item, "Relativity relates...")
+
+    assert "exceed run budget cap" in str(exc_info.value)
+    assert tracker.spent_usd == pytest.approx(0.02)

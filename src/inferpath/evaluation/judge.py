@@ -1,6 +1,7 @@
 """LLM Judge interface and mock/real implementations for InferPath evaluation."""
 
 import contextlib
+import math
 import time
 from typing import Any, Protocol, runtime_checkable
 
@@ -169,6 +170,7 @@ Output JSON with keys "score" (float 0.0 to 1.0) and "rationale" (string)."""
             "model": self.judge_model_id,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.0,
+            "max_tokens": 256,
         }
 
         actual_cost = 0.0005
@@ -196,23 +198,30 @@ Output JSON with keys "score" (float 0.0 to 1.0) and "rationale" (string)."""
                 usage = data.get("usage", {})
                 if isinstance(usage, dict) and usage.get("cost") is not None:
                     with contextlib.suppress(ValueError, TypeError):
-                        actual_cost = float(usage["cost"])
+                        raw_cost = float(usage["cost"])
+                        if math.isfinite(raw_cost) and raw_cost >= 0.0:
+                            actual_cost = raw_cost
                 elif self.pricing_table or getattr(self.budget_tracker, "pricing_table", None):
                     pt = self.pricing_table or getattr(self.budget_tracker, "pricing_table", None)
                     p_tok = int(usage.get("prompt_tokens", 0)) if isinstance(usage, dict) else 0
                     c_tok = int(usage.get("completion_tokens", 0)) if isinstance(usage, dict) else 0
-                    actual_cost = pt.calculate_cost(self.judge_model_id, p_tok, c_tok)
+                    calc_cost = pt.calculate_cost(self.judge_model_id, p_tok, c_tok)
+                    if math.isfinite(calc_cost) and calc_cost >= 0.0:
+                        actual_cost = calc_cost
                 else:
                     p_tok = int(usage.get("prompt_tokens", 0)) if isinstance(usage, dict) else 0
                     c_tok = int(usage.get("completion_tokens", 0)) if isinstance(usage, dict) else 0
                     if p_tok > 0 or c_tok > 0:
-                        actual_cost = round(
+                        calc_cost = round(
                             (p_tok * 0.15 / 1_000_000.0) + (c_tok * 0.60 / 1_000_000.0), 6
                         )
+                        if math.isfinite(calc_cost) and calc_cost >= 0.0:
+                            actual_cost = calc_cost
 
                 if self.budget_tracker and reservation_token:
-                    self.budget_tracker.reconcile(reservation_token, actual_cost)
+                    tok = reservation_token
                     reservation_token = None
+                    self.budget_tracker.reconcile(tok, actual_cost)
 
         except BudgetExceededError:
             if self.budget_tracker and reservation_token:

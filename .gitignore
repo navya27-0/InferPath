@@ -58,6 +58,10 @@ data/logs/*.jsonl
 # Evaluation run logs (preserve manifests and summary metadata)
 data/results/**/logs_*.json
 
+# Human review unblinding keys (preserve double-blind protocol for reviewers)
+data/results/**/human_review_key.json
+**/human_review_key.json
+
 
 # IDE and OS
 .vscode/

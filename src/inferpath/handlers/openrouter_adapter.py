@@ -271,7 +271,9 @@ class OpenRouterAdapter:
                                 if result.cost_usd_calculated is not None
                                 else est_cost
                             )
-                            self.budget_tracker.reconcile(reservation_token, actual_cost)
+                            tok = reservation_token
+                            reservation_token = None
+                            self.budget_tracker.reconcile(tok, actual_cost)
                         return result
 
                     # Non-retryable auth errors
@@ -363,7 +365,9 @@ class OpenRouterAdapter:
                                 if result.cost_usd_calculated is not None
                                 else est_cost
                             )
-                            self.budget_tracker.reconcile(reservation_token, actual_cost)
+                            tok = reservation_token
+                            reservation_token = None
+                            self.budget_tracker.reconcile(tok, actual_cost)
                         return result
 
                     if response.status_code in (401, 403):

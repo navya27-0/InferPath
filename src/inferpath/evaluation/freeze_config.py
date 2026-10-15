@@ -51,7 +51,7 @@ def compute_config_hash(config_dict: dict[str, Any] | None = None) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def get_git_commit(cwd: Path | str | None = None) -> str:
+def get_git_commit(cwd: Path | str | None = None, ignore_results: bool = True) -> str:
     """Retrieves current HEAD commit hash via git rev-parse, appending -dirty if uncommitted."""
     try:
         res = subprocess.run(
@@ -62,15 +62,15 @@ def get_git_commit(cwd: Path | str | None = None) -> str:
             check=True,
         )
         commit = res.stdout.strip()
-        if not check_git_tree_clean(cwd):
+        if not check_git_tree_clean(cwd, ignore_results=ignore_results):
             commit = f"{commit}-dirty"
         return commit
     except Exception:
         return "uncommitted_git_fallback"
 
 
-def check_git_tree_clean(cwd: Path | str | None = None) -> bool:
-    """Returns True if the git working tree has no uncommitted changes."""
+def check_git_tree_clean(cwd: Path | str | None = None, ignore_results: bool = True) -> bool:
+    """Returns True if the git working tree has no uncommitted changes (optionally ignoring results)."""
     try:
         res = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -79,7 +79,25 @@ def check_git_tree_clean(cwd: Path | str | None = None) -> bool:
             text=True,
             check=True,
         )
-        return len(res.stdout.strip()) == 0
+        raw_lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+        if not ignore_results:
+            return len(raw_lines) == 0
+
+        filtered: list[str] = []
+        for line in raw_lines:
+            parts = line.split(maxsplit=1)
+            if len(parts) < 2:
+                continue
+            path_str = parts[1].strip('"').replace("\\", "/")
+            if (
+                path_str.startswith("data/results/")
+                or path_str.startswith("data/storage/")
+                or path_str.startswith("data/logs/")
+                or path_str.startswith("docs/img/")
+            ):
+                continue
+            filtered.append(line)
+        return len(filtered) == 0
     except Exception:
         return False
 

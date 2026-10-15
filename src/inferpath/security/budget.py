@@ -1,6 +1,7 @@
 """Per-run budget tracking, reservation, and reconciliation."""
 
 import collections
+import math
 import threading
 import uuid
 from enum import StrEnum
@@ -14,6 +15,7 @@ class ReservationState(StrEnum):
     RESERVED = "RESERVED"
     RECONCILED = "RECONCILED"
     RELEASED = "RELEASED"
+    EXCEEDED = "EXCEEDED"
 
 
 class BudgetExceededError(ValueError):
@@ -62,6 +64,8 @@ class RunBudgetTracker:
         target_max = max_usd if max_usd is not None else max_budget_usd
         if target_max is None:
             target_max = 0.0
+        if not math.isfinite(target_max):
+            raise ValueError(f"max_usd must be a finite number, got {target_max}")
         if target_max < 0.0:
             raise ValueError(f"max_usd cannot be negative, got {target_max}")
         self.max_usd = float(target_max)
@@ -136,6 +140,8 @@ class RunBudgetTracker:
         Reserves estimated cost prior to dispatch.
         Raises BudgetExceededError if remaining budget cannot cover the call.
         """
+        if not math.isfinite(estimated_cost):
+            raise ValueError(f"Estimated cost must be a finite number, got {estimated_cost}")
         if estimated_cost < 0:
             raise ValueError("Estimated cost cannot be negative.")
 
@@ -155,7 +161,17 @@ class RunBudgetTracker:
             return token
 
     def reconcile(self, token: str, actual_cost: float) -> None:
-        """Reconciles reservation with actual calculated cost."""
+        """Reconciles reservation with actual calculated cost.
+
+        Guarantees:
+        - Validates that actual_cost is finite and non-negative.
+        - Releases active reservation.
+        - Increments cumulative spent_usd.
+        - If cumulative spend exceeds max_usd (when max_usd > 0), marks state as EXCEEDED
+          and raises BudgetExceededError to guarantee a hard cap.
+        """
+        if not math.isfinite(actual_cost):
+            raise ValueError(f"Actual cost must be a finite number, got {actual_cost}")
         if actual_cost < 0:
             raise ValueError("Actual cost cannot be negative.")
 
@@ -167,6 +183,10 @@ class RunBudgetTracker:
             self.reserved_usd = max(0.0, self.reserved_usd - reserved)
             self.spent_usd += actual_cost
 
+            # Enforce hard budget cap: check if cumulative spend exceeds max_usd
+            over_cap = self.max_usd > 0.0 and self.spent_usd > self.max_usd
+            state = ReservationState.EXCEEDED if over_cap else ReservationState.RECONCILED
+
             if (
                 self._settled_history.maxlen is not None
                 and len(self._settled_history) == self._settled_history.maxlen
@@ -175,8 +195,17 @@ class RunBudgetTracker:
                 evicted_token, _, _ = self._settled_history[0]
                 self._settled_tokens.discard(evicted_token)
 
-            self._settled_history.append((token, actual_cost, ReservationState.RECONCILED))
+            self._settled_history.append((token, actual_cost, state))
             self._settled_tokens.add(token)
+
+            if over_cap:
+                raise BudgetExceededError(
+                    f"Reconciled cost ${actual_cost:.6f} caused cumulative spend ${self.spent_usd:.6f} "
+                    f"to exceed run budget cap ${self.max_usd:.6f}.",
+                    estimated_cost=actual_cost,
+                    remaining_budget=0.0,
+                    cap=self.max_usd,
+                )
 
     def release(self, token: str) -> None:
         """Releases reservation without adding cost (e.g. on call cancellation)."""

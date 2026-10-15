@@ -126,6 +126,8 @@ class ExperimentHarness:
 
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.estimator = EnvironmentalEstimator()
+        self.git_commit = get_git_commit()
+        self.git_tree_clean = check_git_tree_clean()
 
     def _create_pipeline_for_system(
         self,
@@ -664,8 +666,8 @@ class ExperimentHarness:
             dataset_version="1.0.0",
             dataset_sha256=dataset_sha,
             config_hash=config_hash,
-            git_commit=get_git_commit(),
-            git_tree_clean=check_git_tree_clean(),
+            git_commit=self.git_commit,
+            git_tree_clean=self.git_tree_clean,
             timestamp=datetime.now(UTC).isoformat(),
             random_seed=seed,
             q_min=self.q_min,
