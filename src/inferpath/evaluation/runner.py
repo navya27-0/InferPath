@@ -1,6 +1,7 @@
 """Main evaluation benchmark runner executing Systems A, B, C, ablations, and generating evaluation summaries."""
 
 import argparse
+import contextlib
 import json
 import time
 from pathlib import Path
@@ -115,11 +116,13 @@ def run_full_benchmark_suite(
 
     # 3. Cache Benchmark (Cold vs Warm)
     print("\n--> Running Cache Cold vs Warm Benchmark...")
+    bench_cache_file = harness.base_dir / "bench_cache.db"
+    if bench_cache_file.exists():
+        with contextlib.suppress(OSError):
+            bench_cache_file.unlink()
     cache_evaluator = CacheEvaluator(
-        pipeline=harness._create_pipeline_for_system(
-            "System_C", str(harness.base_dir / "bench_cache.db")
-        ),
-        cache_db_path=str(harness.base_dir / "bench_cache.db"),
+        pipeline=harness._create_pipeline_for_system("System_C", str(bench_cache_file)),
+        cache_db_path=str(bench_cache_file),
     )
     cold_metrics, _ = cache_evaluator.run_workload(items, mode="cold_cache")
     warm_metrics, _ = cache_evaluator.run_workload(items, mode="warm_cache")

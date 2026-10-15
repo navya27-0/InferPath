@@ -1,5 +1,6 @@
 """Experiment execution harness orchestrating Systems A, B, C and Ablations under frozen protocol."""
 
+import contextlib
 import hashlib
 import json
 import platform
@@ -283,7 +284,11 @@ class ExperimentHarness:
                 raise RuntimeError(f"Test execution locked: {msg}")
 
         run_id = f"run_{system_id}_{split}_{run_index}"
-        db_path = str(self.base_dir / f"cache_{run_id}.db")
+        cache_file = self.base_dir / f"cache_{run_id}.db"
+        if cache_file.exists():
+            with contextlib.suppress(OSError):
+                cache_file.unlink()
+        db_path = str(cache_file)
 
         pipeline = self._create_pipeline_for_system(
             system_id=system_id, cache_db_path=db_path, budget_tracker=self.budget_tracker
