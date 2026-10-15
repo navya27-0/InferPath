@@ -13,12 +13,27 @@ from inferpath.security.hashing import hash_prompt, hash_text, scrub_api_keys
 class PrivacyViolationError(PermissionError):
     """Raised when an operation violates active privacy policies."""
 
-    pass
+    def __init__(
+        self,
+        message: str,
+        privacy_class: str | None = None,
+        target_tier: str | None = None,
+        code: str = "PRIVACY_BLOCKED",
+    ):
+        clean_msg = scrub_api_keys(message)
+        super().__init__(clean_msg)
+        self.message = clean_msg
+        self.privacy_class = privacy_class
+        self.target_tier = target_tier
+        self.code = code
+
+    def __str__(self) -> str:
+        return self.message
 
 
 class PrivacyPolicyEnforcer:
-    """
-    Enforces non-negotiable privacy boundaries:
+    """Enforces non-negotiable privacy boundaries:
+
     1. Requests classified INTERNAL or CONFIDENTIAL_PRIVATE are blocked from external transmission
        by default. Redacted private data is NOT sent externally unless an approved exception is active.
     2. Private requests are forbidden from being cached.
@@ -56,37 +71,68 @@ class PrivacyPolicyEnforcer:
     def can_transmit_externally(
         self, request: UserRequest, target_tier: RouteTier
     ) -> tuple[bool, str | None]:
-        """
-        Determines whether a request may be sent to an external model API (Tiers C or D).
+        """Determines whether a request may be sent to an external model API (Tiers C or D).
+
         Deterministic (Tier A) and local Template (Tier B) executions are local and do not transmit data externally.
         """
         # Local tiers do not invoke external APIs
         if target_tier in (RouteTier.DETERMINISTIC_A, RouteTier.TEMPLATE_B):
             return True, None
 
-        # External tiers (C and D) require policy validation
-        if request.privacy_class == PrivacyClass.PUBLIC:
-            return True, None
+        # Check explicit privacy classification
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            override_allowed = self.approved_exceptions.get(
+                "allow_redacted_transmission_override", False
+            )
+            if request.allow_external_transmission and override_allowed:
+                return True, None
+            return (
+                False,
+                f"Transmission blocked: Privacy classification '{request.privacy_class.value}' "
+                f"strictly prohibits external transmission to external model tier '{target_tier.value}'.",
+            )
 
-        # Check explicit policy overrides
-        override_allowed = self.approved_exceptions.get(
-            "allow_redacted_transmission_override", False
-        )
-        if request.allow_external_transmission and override_allowed:
-            return True, None
+        # Defense-in-depth: inspect for credentials and sensitive patterns even if marked public
+        from inferpath.router.analyzer import SENSITIVE_CONTENT_PATTERNS
 
-        return (
-            False,
-            f"Transmission blocked: Privacy classification '{request.privacy_class.value}' "
-            f"strictly prohibits external transmission to external model tier '{target_tier.value}'.",
-        )
+        text_items = [request.prompt]
+        if request.context:
+            text_items.append(request.context)
+        if request.metadata:
+            text_items.extend(f"{k}: {v}" for k, v in request.metadata.items())
+        combined = " \n ".join(text_items)
+
+        for pattern in SENSITIVE_CONTENT_PATTERNS:
+            if pattern.search(combined):
+                return (
+                    False,
+                    f"Transmission blocked: Sensitive content detected in request; "
+                    f"strictly prohibits external transmission to external model tier '{target_tier.value}'.",
+                )
+
+        return True, None
 
     def is_cache_permitted(self, request: UserRequest) -> bool:
+        """Enforces privacy rule: Private or confidential requests are NEVER cached.
+
+        Only strictly PUBLIC data without sensitive tokens may enter the cache.
         """
-        Enforces privacy rule: Private or confidential requests are NEVER cached.
-        Only strictly PUBLIC data may enter the cache.
-        """
-        return request.privacy_class == PrivacyClass.PUBLIC
+        if request.privacy_class != PrivacyClass.PUBLIC:
+            return False
+
+        from inferpath.router.analyzer import SENSITIVE_CONTENT_PATTERNS
+
+        text_items = [request.prompt]
+        if request.context:
+            text_items.append(request.context)
+        if request.metadata:
+            text_items.extend(f"{k}: {v}" for k, v in request.metadata.items())
+        combined = " \n ".join(text_items)
+
+        return all(not pattern.search(combined) for pattern in SENSITIVE_CONTENT_PATTERNS)
 
     def sanitize_for_audit(self, request: UserRequest) -> dict[str, Any]:
         """

@@ -40,14 +40,23 @@ class RequestAnalysis(BaseModel):
     rationale: str = ""
 
 
-# Sensitive tokens that trigger conservative privacy upgrade if found in prompt
+# Sensitive tokens and credential patterns triggering conservative privacy upgrade
+# Note: Keyword/pattern heuristics are conservative defense-in-depth measures and
+# cannot detect every sensitive request. Callers must supply explicit classification.
 SENSITIVE_CONTENT_PATTERNS = [
     re.compile(
-        r"\b(password|passwd|api[_\s]?key|secret[_\s]?key|private[_\s]?key|bearer\s+[a-zA-Z0-9_\-\.]+)\b",
+        r"\b(password|passwd|api[_\s]?key|secret[_\s]?key|private[_\s]?key|access[_\s]?token|auth[_\s]?token|bearer\s+[a-zA-Z0-9_\-\.]+)\b",
         re.IGNORECASE,
     ),
     re.compile(
-        r"\b(ssn|social security number|credit card|cvv|confidential internal|strictly confidential)\b",
+        r"\b(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|xox[baprs]-[a-zA-Z0-9_\-]+)\b",
+    ),
+    re.compile(
+        r"\b(ssn|social security number|credit card|cvv|confidential internal|strictly confidential|proprietary\s+and\s+confidential|trade\s+secret)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(payroll\s+data|employee\s+salary|patient\s+health\s+information|phi|hipaa\s+confidential)\b",
         re.IGNORECASE,
     ),
 ]
@@ -276,10 +285,24 @@ class RequestAnalyzer:
         ):
             return request.privacy_class
 
-        # Scan for sensitive content patterns
+        # Scan prompt for sensitive content patterns
         for pattern in SENSITIVE_CONTENT_PATTERNS:
             if pattern.search(prompt):
                 return PrivacyClass.CONFIDENTIAL_PRIVATE
+
+        # Scan context if provided
+        if request.context:
+            for pattern in SENSITIVE_CONTENT_PATTERNS:
+                if pattern.search(request.context):
+                    return PrivacyClass.CONFIDENTIAL_PRIVATE
+
+        # Scan metadata keys and values
+        if request.metadata:
+            for k, v in request.metadata.items():
+                str_entry = f"{k}: {v}"
+                for pattern in SENSITIVE_CONTENT_PATTERNS:
+                    if pattern.search(str_entry):
+                        return PrivacyClass.CONFIDENTIAL_PRIVATE
 
         return request.privacy_class
 

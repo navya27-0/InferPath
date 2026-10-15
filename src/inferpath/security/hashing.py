@@ -4,9 +4,11 @@ import hashlib
 import re
 
 API_KEY_PATTERNS = [
-    re.compile(r"sk-or-v1-[a-zA-Z0-9]{32,}", re.IGNORECASE),
-    re.compile(r"sk-[a-zA-Z0-9]{32,}", re.IGNORECASE),
-    re.compile(r"(?:api_key|bearer|token)[\s:=]+([a-zA-Z0-9_\-]{16,})", re.IGNORECASE),
+    re.compile(r"sk-or-v1-[a-zA-Z0-9_-]{16,}", re.IGNORECASE),
+    re.compile(r"sk-[a-zA-Z0-9_-]{16,}", re.IGNORECASE),
+    re.compile(r"Bearer\s+[a-zA-Z0-9_\-\.]{16,}", re.IGNORECASE),
+    re.compile(r"(?:api[_-]?key|bearer|token|secret)[\s:=]+([a-zA-Z0-9_\-]{12,})", re.IGNORECASE),
+    re.compile(r"-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA )?PRIVATE KEY-----"),
 ]
 
 

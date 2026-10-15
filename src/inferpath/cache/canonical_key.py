@@ -96,18 +96,20 @@ class CanonicalKeyBuilder:
         """
         norm_prompt = normalize_prompt(prompt)
 
+        def _sort_dict_recursively(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                return {k: _sort_dict_recursively(v) for k, v in sorted(obj.items())}
+            if isinstance(obj, list):
+                return [_sort_dict_recursively(item) for item in obj]
+            return obj
+
         # Normalize task parameters into a stable sorted dictionary
         if isinstance(task_parameters, TaskParameters):
-            params_dict = {
-                "audience": task_parameters.audience,
-                "expected_format": task_parameters.expected_format,
-                "language": task_parameters.language,
-                "max_latency_ms": task_parameters.max_latency_ms,
-                "max_tokens": task_parameters.max_tokens,
-                "quality_preference": task_parameters.quality_preference,
-            }
+            params_dict = _sort_dict_recursively(
+                {k: v for k, v in task_parameters.model_dump().items() if v is not None}
+            )
         elif isinstance(task_parameters, dict):
-            params_dict = {k: v for k, v in sorted(task_parameters.items())}
+            params_dict = _sort_dict_recursively(task_parameters)
         else:
             params_dict = {}
 

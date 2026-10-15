@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hmac
 import os
+import threading
 import time
 import uuid
-from collections import defaultdict
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -20,25 +21,43 @@ from inferpath.security.hashing import scrub_api_keys
 from inferpath.security.privacy import PrivacyViolationError
 from inferpath.telemetry.metrics import GLOBAL_METRICS
 
+MAX_PROMPT_CHARS = 32_768
+
 
 class RateLimiter:
-    """In-memory rate limiter using a sliding 60-second window."""
+    """In-memory rate limiter using a sliding 60-second window with bounded storage."""
 
-    def __init__(self, requests_per_minute: int = 120):
+    def __init__(self, requests_per_minute: int = 120, max_clients: int = 10_000):
         self.requests_per_minute = requests_per_minute
-        self._history: dict[str, list[float]] = defaultdict(list)
+        self.max_clients = max_clients
+        self._history: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
 
     def is_allowed(self, client_id: str) -> bool:
         now = time.monotonic()
         cutoff = now - 60.0
-        # Filter timestamps within window
-        valid_history = [t for t in self._history[client_id] if t > cutoff]
-        if len(valid_history) >= self.requests_per_minute:
+        with self._lock:
+            history = self._history.get(client_id, [])
+            valid_history = [t for t in history if t > cutoff]
+
+            if len(valid_history) >= self.requests_per_minute:
+                self._history[client_id] = valid_history
+                return False
+
+            # Bounded capacity check
+            if client_id not in self._history and len(self._history) >= self.max_clients:
+                # Evict expired client histories
+                expired_keys = [k for k, v in self._history.items() if not v or max(v) <= cutoff]
+                for k in expired_keys:
+                    del self._history[k]
+                # If still at cap, evict oldest entry
+                if len(self._history) >= self.max_clients:
+                    oldest_k = next(iter(self._history))
+                    del self._history[oldest_k]
+
+            valid_history.append(now)
             self._history[client_id] = valid_history
-            return False
-        valid_history.append(now)
-        self._history[client_id] = valid_history
-        return True
+            return True
 
 
 class RespondRequest(BaseModel):
@@ -84,10 +103,19 @@ class RespondResponse(BaseModel):
     water_provenance: str | None = None
 
 
+def _constant_time_compare(val_a: str | None, val_b: str | None) -> bool:
+    """Performs constant-time comparison of two strings to prevent timing attacks."""
+    if val_a is None or val_b is None:
+        return False
+    return hmac.compare_digest(val_a.encode("utf-8"), val_b.encode("utf-8"))
+
+
 def create_app(
     pipeline: RequestPipeline | None = None,
     rate_limiter: RateLimiter | None = None,
     api_key: str | None = None,
+    deployment_mode: str | None = None,
+    trusted_proxies: set[str] | None = None,
 ) -> FastAPI:
     """Application factory supporting pipeline, rate limiting, and auth injection."""
     app = FastAPI(
@@ -97,7 +125,23 @@ def create_app(
     )
     pipeline_instance = pipeline or RequestPipeline()
     limiter = rate_limiter or RateLimiter(requests_per_minute=120)
+
+    # Deployment mode configuration ("local-demo" vs "protected")
+    dep_mode = (
+        deployment_mode
+        if deployment_mode is not None
+        else os.getenv("INFERPATH_DEPLOYMENT_MODE", "local-demo").strip().lower()
+    )
     required_api_key = api_key if api_key is not None else os.getenv("INFERPATH_API_KEY", "")
+
+    # Trusted proxy network configuration
+    configured_proxies: set[str] = set()
+    if trusted_proxies is not None:
+        configured_proxies = trusted_proxies
+    else:
+        proxy_env = os.getenv("INFERPATH_TRUSTED_PROXIES", "").strip()
+        if proxy_env:
+            configured_proxies = {p.strip() for p in proxy_env.split(",") if p.strip()}
 
     @app.exception_handler(PrivacyViolationError)
     async def privacy_violation_handler(request: Request, exc: PrivacyViolationError):
@@ -126,10 +170,53 @@ def create_app(
             },
         )
 
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        detail = exc.detail
+        code = "HTTP_ERROR"
+        error = "Request error"
+        if isinstance(detail, dict):
+            error = detail.get("error", error)
+            code = detail.get("code", code)
+            detail = detail.get("detail", str(detail))
+        else:
+            if exc.status_code == 400:
+                code = "BAD_REQUEST"
+                error = "Bad request"
+            elif exc.status_code == 401:
+                code = "UNAUTHORIZED"
+                error = "Unauthorized"
+            elif exc.status_code == 403:
+                code = "FORBIDDEN"
+                error = "Forbidden"
+            elif exc.status_code == 404:
+                code = "NOT_FOUND"
+                error = "Not found"
+            elif exc.status_code == 429:
+                code = "RATE_LIMIT_EXCEEDED"
+                error = "Rate limit exceeded"
+            elif exc.status_code >= 500:
+                code = "INTERNAL_ERROR"
+                error = "Internal server error"
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": error,
+                "detail": scrub_api_keys(str(detail)),
+                "code": code,
+            },
+        )
+
     @app.get("/health")
     @app.get("/v1/health")
     async def health_check():
-        return {"status": "healthy", "service": "inferpath", "version": "0.1.0"}
+        return {
+            "status": "healthy",
+            "service": "inferpath",
+            "version": "0.1.0",
+            "deployment_mode": dep_mode,
+        }
 
     @app.get("/metrics")
     async def prometheus_metrics():
@@ -140,28 +227,100 @@ def create_app(
 
     @app.post("/v1/respond", response_model=RespondResponse)
     async def respond(body: RespondRequest, request: Request):
-        # 1. API key authentication (if configured)
-        if required_api_key:
-            client_key = request.headers.get("X-API-Key")
-            if not client_key or client_key != required_api_key:
+        # 1. Authentication check
+        client_key = request.headers.get("X-API-Key")
+        if not client_key:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                client_key = auth_header[7:].strip()
+
+        if dep_mode == "protected":
+            if not required_api_key or not _constant_time_compare(client_key, required_api_key):
                 raise HTTPException(
                     status_code=401,
-                    detail="Invalid or missing X-API-Key header.",
+                    detail={
+                        "error": "Unauthorized",
+                        "detail": "Protected deployment mode requires valid API key authentication.",
+                        "code": "UNAUTHORIZED",
+                    },
                 )
+        elif required_api_key and not _constant_time_compare(client_key, required_api_key):
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "error": "Unauthorized",
+                    "detail": "Invalid or missing X-API-Key header.",
+                    "code": "UNAUTHORIZED",
+                },
+            )
 
-        # 2. Rate limiting check
-        client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (
-            request.client.host if request.client else "127.0.0.1"
-        )
+        # 2. Rate limiting check (Strict client IP derivation)
+        peer_ip = request.client.host if request.client else "127.0.0.1"
+        if peer_ip in configured_proxies:
+            forwarded = request.headers.get("X-Forwarded-For")
+            client_ip = (forwarded.split(",")[0].strip() or peer_ip) if forwarded else peer_ip
+        else:
+            client_ip = peer_ip
+
         if not limiter.is_allowed(client_ip):
             raise HTTPException(
                 status_code=429,
-                detail="Rate limit exceeded. Maximum 120 requests per minute allowed.",
+                detail={
+                    "error": "Rate limit exceeded",
+                    "detail": "Maximum 120 requests per minute allowed.",
+                    "code": "RATE_LIMIT_EXCEEDED",
+                },
             )
 
-        # 3. Validate prompt non-empty
+        # 3. Payload validation
         if not body.prompt or not body.prompt.strip():
-            raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Bad request",
+                    "detail": "Prompt cannot be empty.",
+                    "code": "INVALID_PROMPT",
+                },
+            )
+
+        if len(body.prompt) > MAX_PROMPT_CHARS:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Payload too large",
+                    "detail": f"Prompt length ({len(body.prompt)}) exceeds maximum limit of {MAX_PROMPT_CHARS} characters.",
+                    "code": "PAYLOAD_TOO_LARGE",
+                },
+            )
+
+        # Numeric constraints validation
+        if body.minimum_quality is not None and not (0.0 <= body.minimum_quality <= 1.0):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Invalid constraints",
+                    "detail": f"minimum_quality must be between 0.0 and 1.0, got {body.minimum_quality}",
+                    "code": "INVALID_CONSTRAINTS",
+                },
+            )
+        if body.maximum_cost_usd is not None and body.maximum_cost_usd < 0.0:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Invalid constraints",
+                    "detail": f"maximum_cost_usd cannot be negative, got {body.maximum_cost_usd}",
+                    "code": "INVALID_CONSTRAINTS",
+                },
+            )
+        if body.maximum_latency_ms is not None and body.maximum_latency_ms < 0.0:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Invalid constraints",
+                    "detail": f"maximum_latency_ms cannot be negative, got {body.maximum_latency_ms}",
+                    "code": "INVALID_CONSTRAINTS",
+                },
+            )
 
         task_params = body.task_parameters.model_copy()
         if body.minimum_quality is not None:
@@ -188,12 +347,23 @@ def create_app(
         except BudgetExceededError:
             raise
         except PipelineExecutionError as err:
-            raise HTTPException(status_code=400, detail=scrub_api_keys(str(err))) from err
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Pipeline execution error",
+                    "detail": scrub_api_keys(str(err)),
+                    "code": "PIPELINE_ERROR",
+                },
+            ) from err
         except Exception as err:
             # Never expose internal secrets or tracebacks to the client
             raise HTTPException(
                 status_code=502,
-                detail=f"Inference pipeline execution error: {scrub_api_keys(str(err))}",
+                detail={
+                    "error": "Inference backend error",
+                    "detail": scrub_api_keys(str(err)),
+                    "code": "BACKEND_ERROR",
+                },
             ) from err
 
         # Record telemetry metrics

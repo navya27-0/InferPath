@@ -9,7 +9,7 @@ from typing import Any
 import aiosqlite
 
 from inferpath.models.domain import HandlerOutput, UserRequest
-from inferpath.models.enums import RouteTier
+from inferpath.models.enums import PrivacyClass, RouteTier
 from inferpath.security.hashing import scrub_api_keys
 
 CACHE_SCHEMA_SQL = """
@@ -40,10 +40,54 @@ class ExactCache:
     and safe serialization.
     """
 
-    def __init__(self, db_path: str | Path = "data/storage/inferpath.db"):
+    def __init__(
+        self,
+        db_path: str | Path = "data/storage/inferpath.db",
+        max_entries: int = 10_000,
+    ):
         self.db_path = str(db_path)
+        self.max_entries = max_entries
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self.init_schema()
+
+    def _enforce_capacity(self, conn: sqlite3.Connection) -> None:
+        """Evicts expired entries and enforces max_entries capacity via LRU/FIFO."""
+        now = datetime.now(UTC).isoformat()
+        conn.execute("DELETE FROM exact_cache WHERE expires_at <= ?", (now,))
+        cursor = conn.execute("SELECT COUNT(*) FROM exact_cache")
+        count = cursor.fetchone()[0]
+        if count >= self.max_entries:
+            excess = count - self.max_entries + 1
+            conn.execute(
+                f"""
+                DELETE FROM exact_cache
+                WHERE cache_key IN (
+                    SELECT cache_key FROM exact_cache
+                    ORDER BY hit_count ASC, created_at ASC
+                    LIMIT {excess}
+                )
+                """
+            )
+
+    async def _enforce_capacity_async(self, db: aiosqlite.Connection) -> None:
+        """Asynchronously evicts expired entries and enforces max_entries capacity."""
+        now = datetime.now(UTC).isoformat()
+        await db.execute("DELETE FROM exact_cache WHERE expires_at <= ?", (now,))
+        cursor = await db.execute("SELECT COUNT(*) FROM exact_cache")
+        row = await cursor.fetchone()
+        count = row[0] if row else 0
+        if count >= self.max_entries:
+            excess = count - self.max_entries + 1
+            await db.execute(
+                f"""
+                DELETE FROM exact_cache
+                WHERE cache_key IN (
+                    SELECT cache_key FROM exact_cache
+                    ORDER BY hit_count ASC, created_at ASC
+                    LIMIT {excess}
+                )
+                """
+            )
 
     def init_schema(self) -> None:
         """Initializes exact cache table and indexes synchronously."""
@@ -198,11 +242,17 @@ class ExactCache:
         """
         with sqlite3.connect(self.db_path) as conn:
             try:
+                self._enforce_capacity(conn)
+                prompt_preview = (
+                    request.prompt[:500]
+                    if getattr(request, "privacy_class", None) == PrivacyClass.PUBLIC
+                    else "[REDACTED_CONFIDENTIAL]"
+                )
                 conn.execute(
                     sql,
                     (
                         cache_key,
-                        request.prompt[:500],  # Short normalized preview
+                        prompt_preview,
                         output.output_text,
                         route_str,
                         payload_json,
@@ -283,11 +333,17 @@ class ExactCache:
         """
         async with aiosqlite.connect(self.db_path) as db:
             try:
+                await self._enforce_capacity_async(db)
+                prompt_preview = (
+                    request.prompt[:500]
+                    if getattr(request, "privacy_class", None) == PrivacyClass.PUBLIC
+                    else "[REDACTED_CONFIDENTIAL]"
+                )
                 await db.execute(
                     sql,
                     (
                         cache_key,
-                        request.prompt[:500],
+                        prompt_preview,
                         output.output_text,
                         route_str,
                         payload_json,

@@ -93,7 +93,7 @@ class CircuitBreaker:
     def record_failure(self) -> None:
         self.consecutive_failures += 1
         self.last_failure_time = time.monotonic()
-        if self.consecutive_failures >= self.failure_threshold:
+        if self.consecutive_failures >= self.failure_threshold or self.state == "HALF_OPEN":
             self.state = "OPEN"
 
 
@@ -167,15 +167,39 @@ class OpenRouterAdapter:
         return round(cost, 6)
 
     def _parse_response_body(self, data: dict[str, Any], latency_ms: float) -> ModelResult:
-        choices = data.get("choices", [])
-        if not choices:
+        if not isinstance(data, dict):
+            raise OpenRouterResponseError("Provider response payload is not a valid JSON object.")
+
+        choices = data.get("choices")
+        if not choices or not isinstance(choices, list):
             raise OpenRouterResponseError("Provider response contains no choices.")
 
-        text = choices[0].get("message", {}).get("content", "")
-        usage = data.get("usage", {})
+        first_choice = choices[0]
+        if not isinstance(first_choice, dict):
+            raise OpenRouterResponseError("Provider response choice is malformed.")
 
-        input_tokens = usage.get("prompt_tokens", 0)
-        output_tokens = usage.get("completion_tokens", 0)
+        message = first_choice.get("message")
+        if not isinstance(message, dict):
+            raise OpenRouterResponseError("Provider response choice missing message object.")
+
+        text = message.get("content")
+        if text is None or not isinstance(text, str):
+            raise OpenRouterResponseError("Provider response message content is missing or null.")
+
+        usage = data.get("usage")
+        if usage is not None and not isinstance(usage, dict):
+            usage = {}
+        usage = usage or {}
+
+        try:
+            input_tokens = max(0, int(usage.get("prompt_tokens") or 0))
+        except (ValueError, TypeError):
+            input_tokens = 0
+
+        try:
+            output_tokens = max(0, int(usage.get("completion_tokens") or 0))
+        except (ValueError, TypeError):
+            output_tokens = 0
 
         # Calculated cost from verified/dated price table
         cost_calculated = self._calculate_cost(input_tokens, output_tokens)
@@ -377,3 +401,13 @@ class OpenRouterAdapter:
         finally:
             if close_client:
                 await async_client.aclose()
+
+    def close(self) -> None:
+        """Closes the underlying HTTP client if managed by this adapter."""
+        if self._client is not None:
+            self._client.close()
+
+    async def aclose(self) -> None:
+        """Asynchronously closes the underlying HTTP client if managed by this adapter."""
+        if self._async_client is not None:
+            await self._async_client.aclose()

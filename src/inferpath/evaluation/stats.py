@@ -8,13 +8,42 @@ from pydantic import BaseModel
 
 
 class BootstrapCI(BaseModel):
-    """95% confidence interval produced via bootstrap resampling."""
+    """Confidence interval produced via bootstrap resampling."""
 
     mean: float
     ci_lower: float
     ci_upper: float
     confidence_level: float = 0.95
     n_resamples: int = 1000
+    estimator: str = "clustered_task_family_bootstrap"
+    seed: int = 42
+
+    @property
+    def point_estimate(self) -> float:
+        return self.mean
+
+
+def compute_hedges_g(sample_a: Sequence[float], sample_b: Sequence[float]) -> float:
+    """Computes Hedges' g standardized mean difference with small-sample correction."""
+    n_a = len(sample_a)
+    n_b = len(sample_b)
+    if n_a < 2 or n_b < 2:
+        return 0.0
+
+    mean_a = sum(sample_a) / n_a
+    mean_b = sum(sample_b) / n_b
+
+    var_a = sum((x - mean_a) ** 2 for x in sample_a) / (n_a - 1)
+    var_b = sum((x - mean_b) ** 2 for x in sample_b) / (n_b - 1)
+
+    s_pooled = math.sqrt(((n_a - 1) * var_a + (n_b - 1) * var_b) / (n_a + n_b - 2))
+    if s_pooled == 0.0:
+        return 0.0
+
+    d = (mean_a - mean_b) / s_pooled
+    df = n_a + n_b - 2
+    j_factor = 1.0 - (3.0 / (4.0 * df - 1)) if df > 1 else 1.0
+    return round(float(d * j_factor), 4)
 
 
 class RunSummaryStats(BaseModel):
@@ -36,30 +65,68 @@ def compute_clustered_bootstrap_ci(
     seed: int = 42,
     num_bootstraps: int | None = None,
 ) -> BootstrapCI:
-    """
-    Computes a bootstrap confidence interval respecting task-family clustering.
+    """Computes a bootstrap confidence interval respecting task-family clustering.
+
     Resamples clusters (task families) with replacement rather than individual points.
+    Preserves intra-cluster correlation across items within the same task family.
+
+    Raises:
+        ValueError: If confidence_level is not strictly in (0.0, 1.0) or n_resamples < 1.
     """
     if num_bootstraps is not None:
         n_resamples = num_bootstraps
-    rng = random.Random(seed)
-    cluster_keys = list(cluster_values.keys())
+
+    if confidence_level <= 0.0 or confidence_level >= 1.0:
+        raise ValueError(
+            f"confidence_level must be strictly between 0.0 and 1.0, got {confidence_level}"
+        )
+    if n_resamples < 1:
+        raise ValueError(f"n_resamples must be at least 1, got {n_resamples}")
+
+    # Clean cluster values to only include finite numeric observations
+    cleaned_clusters: dict[str, list[float]] = {}
+    for k_id, vals in cluster_values.items():
+        if vals is not None:
+            clean_vals = [
+                float(v) for v in vals if v is not None and not math.isnan(v) and not math.isinf(v)
+            ]
+            if clean_vals:
+                cleaned_clusters[k_id] = clean_vals
+
+    cluster_keys = list(cleaned_clusters.keys())
     k = len(cluster_keys)
 
     if k == 0:
-        return BootstrapCI(mean=0.0, ci_lower=0.0, ci_upper=0.0)
+        return BootstrapCI(
+            mean=0.0,
+            ci_lower=0.0,
+            ci_upper=0.0,
+            confidence_level=confidence_level,
+            n_resamples=n_resamples,
+            estimator="clustered_task_family_bootstrap",
+            seed=seed,
+        )
 
     # Flatten all points for nominal mean
-    all_points = [val for vals in cluster_values.values() for val in vals]
+    all_points = [val for vals in cleaned_clusters.values() for val in vals]
     if not all_points:
-        return BootstrapCI(mean=0.0, ci_lower=0.0, ci_upper=0.0)
+        return BootstrapCI(
+            mean=0.0,
+            ci_lower=0.0,
+            ci_upper=0.0,
+            confidence_level=confidence_level,
+            n_resamples=n_resamples,
+            estimator="clustered_task_family_bootstrap",
+            seed=seed,
+        )
 
     nominal_mean = sum(all_points) / len(all_points)
 
+    rng = random.Random(seed)
     resampled_means: list[float] = []
     for _ in range(n_resamples):
         sampled_clusters = rng.choices(cluster_keys, k=k)
-        sampled_vals = [v for c in sampled_clusters for v in cluster_values[c]]
+        sampled_vals = [v for c in sampled_clusters for v in cleaned_clusters[c]]
         if sampled_vals:
             resampled_means.append(sum(sampled_vals) / len(sampled_vals))
 
@@ -68,6 +135,10 @@ def compute_clustered_bootstrap_ci(
             mean=round(nominal_mean, 4),
             ci_lower=round(nominal_mean, 4),
             ci_upper=round(nominal_mean, 4),
+            confidence_level=confidence_level,
+            n_resamples=n_resamples,
+            estimator="clustered_task_family_bootstrap",
+            seed=seed,
         )
 
     resampled_means.sort()
@@ -84,6 +155,8 @@ def compute_clustered_bootstrap_ci(
         ci_upper=round(resampled_means[idx_upper], 4),
         confidence_level=confidence_level,
         n_resamples=n_resamples,
+        estimator="clustered_task_family_bootstrap",
+        seed=seed,
     )
 
 

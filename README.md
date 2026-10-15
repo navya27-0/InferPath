@@ -161,21 +161,24 @@ The following empirical metrics were logged during the 3-repeat offline benchmar
 
 | System / Baseline | Quality Pass Rate | 95% Bootstrap CI | Cost (USD) | Cost vs A | Latency (ms) | Energy (Wh) | Provenance |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **System_A** | 69.4% ± 0.00% | [69.4%, 69.4%] | $0.02720 | 0.1% | 89.5 ms | 11.811 Wh | `[SIMULATED / CALCULATED]` |
-| **System_Small** | 65.6% ± 0.00% | [65.6%, 65.6%] | $0.00040 | 98.5% | 27.5 ms | 0.626 Wh | `[SIMULATED / CALCULATED]` |
-| **System_B** | 69.4% ± 0.00% | [69.4%, 69.4%] | $0.01950 | 28.3% | 65.4 ms | 8.319 Wh | `[SIMULATED / CALCULATED]` |
-| **System_C** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.00410 | 84.9% | 28.0 ms | 1.862 Wh | `[SIMULATED / CALCULATED]` |
-| **System_Learned** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.00200 | 92.7% | 37.4 ms | 1.284 Wh | `[SIMULATED / CALCULATED]` |
-| **System_Oracle** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.00040 | 98.5% | 17.2 ms | 0.572 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_templates** | 66.2% ± 0.00% | [66.2%, 66.2%] | $0.00410 | 84.9% | 25.2 ms | 1.903 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_small_model** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.02220 | 18.4% | 22.7 ms | 9.856 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_fallback** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.00290 | 89.3% | 29.4 ms | 1.424 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_cache** | 63.1% ± 0.00% | [63.1%, 63.1%] | $0.00410 | 84.9% | 27.1 ms | 1.862 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_validation** | 66.2% ± 0.00% | [66.2%, 66.2%] | $0.00290 | 89.3% | 25.4 ms | 1.424 Wh | `[SIMULATED / CALCULATED]` |
+| **System_A** | 69.4% ± 0.00% | [56.2%, 80.0%] | $0.02720 | 0.1% | 89.5 ms | 11.811 Wh | `[SIMULATED / CALCULATED]` |
+| **System_Small** | 65.6% ± 0.00% | [53.8%, 75.6%] | $0.00040 | 98.5% | 29.3 ms | 0.626 Wh | `[SIMULATED / CALCULATED]` |
+| **System_B** | 69.4% ± 0.00% | [56.2%, 80.0%] | $0.01950 | 28.3% | 65.4 ms | 8.319 Wh | `[SIMULATED / CALCULATED]` |
+| **System_C** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00410 | 84.9% | 27.9 ms | 1.862 Wh | `[SIMULATED / CALCULATED]` |
+| **System_Learned** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00200 | 92.7% | 43.5 ms | 1.284 Wh | `[SIMULATED / CALCULATED]` |
+| **System_Oracle** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00040 | 98.5% | 28.3 ms | 0.572 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_templates** | 66.2% ± 0.00% | [54.4%, 76.2%] | $0.00410 | 84.9% | 28.7 ms | 1.903 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_small_model** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.01840 | 32.4% | 29.5 ms | 8.011 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_fallback** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00290 | 89.3% | 30.8 ms | 1.424 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_cache** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00410 | 84.9% | 30.6 ms | 1.862 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_validation** | 66.2% ± 0.00% | [53.8%, 76.9%] | $0.00290 | 89.3% | 41.3 ms | 1.424 Wh | `[SIMULATED / CALCULATED]` |
 
 - **Summary Artifact**: [`data/results/simulated/benchmark_summary.json`](data/results/simulated/benchmark_summary.json)  
 - **Protocol Config Hash**: `83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3`  
-- **Inter-Rater Agreement**: Human-Human Quadratic $\kappa = 0.8882$, Human-Judge $\kappa = 0.9523$  
+
+- **Inter-Rater Agreement**: *Not established (pending empirical human review study)*  
+
+- **Bootstrap Estimator**: Clustered task-family bootstrap (B=1000 resamples, 95% CI)  
 - **Exact Cache Performance**: Cold Hit Rate = `21.9%`, Warm Hit Rate = `59.4%`, Inappropriate Hits = `0`
 <!-- RESULTS_TABLE_END -->
 

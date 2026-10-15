@@ -123,8 +123,20 @@ def generate_results_markdown() -> str:
         lines.append(
             f"- **Summary Artifact**: [`{summary_rel_path}`]({summary_rel_path})  \n"
             f"- **Protocol Config Hash**: `{meta.get('config_hash', 'N/A')}`  \n"
-            f"- **Inter-Rater Agreement**: Human-Human Quadratic $\\kappa = {meta.get('human_human_kappa', 'N/A')}$, "
-            f"Human-Judge $\\kappa = {meta.get('human_judge_kappa', 'N/A')}$  \n"
+        )
+        hh_kappa = meta.get("human_human_kappa")
+        hj_kappa = meta.get("human_judge_kappa")
+        if hh_kappa is not None:
+            lines.append(
+                f"- **Inter-Rater Agreement**: Human-Human Quadratic $\\kappa = {hh_kappa}$, "
+                f"Human-Judge $\\kappa = {hj_kappa}$ `[MEASURED]`  \n"
+            )
+        else:
+            lines.append(
+                "- **Inter-Rater Agreement**: *Not established (pending empirical human review study)*  \n"
+            )
+        lines.append(
+            f"- **Bootstrap Estimator**: Clustered task-family bootstrap (B={meta.get('bootstrap_resamples', 1000)} resamples, 95% CI)  \n"
             f"- **Exact Cache Performance**: Cold Hit Rate = `21.9%`, Warm Hit Rate = `59.4%`, Inappropriate Hits = `0`"
         )
     else:

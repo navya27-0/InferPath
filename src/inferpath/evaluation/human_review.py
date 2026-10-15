@@ -4,8 +4,164 @@ import csv
 import random
 from io import StringIO
 from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 from inferpath.evaluation.dataset import DatasetItem
+
+
+class HumanReviewRecord(BaseModel):
+    """Documented ingestion format for empirical human evaluation review records."""
+
+    review_id: str = Field(description="Unique review identifier (e.g. REV_0001_R1)")
+    item_id: str = Field(description="Stable item identifier referencing DatasetItem")
+    reviewer_id: str = Field(description="Anonymized reviewer identifier (e.g. reviewer_01)")
+    candidate_id: str = Field(description="Candidate identifier (e.g. candidate_a, candidate_b)")
+    score: int = Field(ge=1, le=5, description="Ordinal quality score from 1 to 5")
+    rubric_version: str = Field(default="1.0.0", description="Rubric version applied")
+    provenance: str = Field(
+        default="measured", description="Rating provenance (measured / synthetic)"
+    )
+    rationale: str | None = Field(default=None, description="Reviewer justification or notes")
+    disagreement_notes: str | None = Field(
+        default=None, description="Arbitration or consensus notes"
+    )
+
+
+def validate_ratings(ratings: list[int | float], min_val: int = 1, max_val: int = 5) -> bool:
+    """Validates that all ratings are within expected ordinal boundaries."""
+    if not ratings:
+        return False
+    return all(isinstance(r, (int, float)) and min_val <= r <= max_val for r in ratings)
+
+
+def load_human_review_csv(csv_path: Path | str) -> list[HumanReviewRecord]:
+    """Loads and validates human review records from a populated review CSV.
+
+    Ignores uncompleted template rows where scores are empty.
+    """
+    path = Path(csv_path)
+    if not path.exists():
+        return []
+
+    records: list[HumanReviewRecord] = []
+    with open(path, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # Check candidate A score
+            score_a_str = row.get("score_a_1_to_5", "").strip()
+            if score_a_str:
+                try:
+                    s_a = int(float(score_a_str))
+                    records.append(
+                        HumanReviewRecord(
+                            review_id=f"{row.get('review_id', 'REV')}_A",
+                            item_id=row.get("item_id", ""),
+                            reviewer_id=row.get("reviewer_id", "anonymous"),
+                            candidate_id="candidate_a",
+                            score=s_a,
+                            rubric_version="1.0.0",
+                            provenance="measured",
+                            rationale=row.get("rationale"),
+                            disagreement_notes=row.get("disagreement_notes"),
+                        )
+                    )
+                except (ValueError, TypeError):
+                    pass
+
+            # Check candidate B score
+            score_b_str = row.get("score_b_1_to_5", "").strip()
+            if score_b_str:
+                try:
+                    s_b = int(float(score_b_str))
+                    records.append(
+                        HumanReviewRecord(
+                            review_id=f"{row.get('review_id', 'REV')}_B",
+                            item_id=row.get("item_id", ""),
+                            reviewer_id=row.get("reviewer_id", "anonymous"),
+                            candidate_id="candidate_b",
+                            score=s_b,
+                            rubric_version="1.0.0",
+                            provenance="measured",
+                            rationale=row.get("rationale"),
+                            disagreement_notes=row.get("disagreement_notes"),
+                        )
+                    )
+                except (ValueError, TypeError):
+                    pass
+
+    return records
+
+
+def compute_inter_rater_agreement(
+    records: list[HumanReviewRecord],
+) -> dict[str, Any]:
+    """Computes inter-rater agreement from empirical review records.
+
+    If genuine dual ratings are unavailable, explicitly reports that agreement
+    has not yet been established rather than fabricating numbers.
+    """
+    if not records:
+        return {
+            "status": "not_established",
+            "human_human_kappa": None,
+            "human_judge_kappa": None,
+            "sample_size": 0,
+            "message": "No empirical human review records available.",
+        }
+
+    # Group ratings by (item_id, candidate_id) -> {reviewer_id: score}
+    paired: dict[tuple[str, str], dict[str, int]] = {}
+    for r in records:
+        paired.setdefault((r.item_id, r.candidate_id), {})[r.reviewer_id] = r.score
+
+    # Find common reviewer pairs
+    all_reviewers = sorted(list({r.reviewer_id for r in records}))
+    if len(all_reviewers) < 2:
+        return {
+            "status": "not_established",
+            "human_human_kappa": None,
+            "human_judge_kappa": None,
+            "sample_size": len(records),
+            "message": f"Requires at least 2 distinct reviewers, found {len(all_reviewers)}.",
+        }
+
+    r1_id, r2_id = all_reviewers[0], all_reviewers[1]
+    scores_r1: list[int] = []
+    scores_r2: list[int] = []
+
+    for pair_scores in paired.values():
+        if r1_id in pair_scores and r2_id in pair_scores:
+            scores_r1.append(pair_scores[r1_id])
+            scores_r2.append(pair_scores[r2_id])
+
+    if len(scores_r1) < 5:
+        return {
+            "status": "not_established",
+            "human_human_kappa": None,
+            "human_judge_kappa": None,
+            "sample_size": len(scores_r1),
+            "message": "Fewer than 5 overlapping items between dual reviewers.",
+        }
+
+    if not validate_ratings(scores_r1) or not validate_ratings(scores_r2):
+        return {
+            "status": "invalid_ratings",
+            "human_human_kappa": None,
+            "human_judge_kappa": None,
+            "sample_size": len(scores_r1),
+            "message": "Submitted ratings failed range/type validation.",
+        }
+
+    kappa = compute_weighted_cohen_kappa(scores_r1, scores_r2, categories=[1, 2, 3, 4, 5])
+    return {
+        "status": "measured",
+        "human_human_kappa": kappa,
+        "human_judge_kappa": None,  # Separate when judge predictions are paired
+        "sample_size": len(scores_r1),
+        "reviewers": [r1_id, r2_id],
+    }
 
 
 def compute_weighted_cohen_kappa(

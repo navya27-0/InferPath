@@ -1,8 +1,18 @@
 """Per-run budget tracking, reservation, and reconciliation."""
 
+import threading
 import uuid
+from enum import StrEnum
 
 from inferpath.config.settings import PricingTable
+
+
+class ReservationState(StrEnum):
+    """Lifecycle state for a budget reservation."""
+
+    RESERVED = "RESERVED"
+    RECONCILED = "RECONCILED"
+    RELEASED = "RELEASED"
 
 
 class BudgetExceededError(ValueError):
@@ -21,8 +31,10 @@ class RunBudgetTracker:
 
     Policy:
     - Tracks cumulative calculated cost across all attempts (including retries and fallback).
+    - Thread-safe reservations and reconciliations via RLock.
     - Reserves estimated maximum cost prior to dispatch to prevent overspending.
     - Reconciles reservation with actual calculated cost upon response.
+    - Rejection of invalid negative parameters.
     - Fails fast with BudgetExceededError when budget is insufficient.
 
     Notice:
@@ -30,17 +42,46 @@ class RunBudgetTracker:
     It may differ from external provider billing if provider rates change.
     """
 
-    def __init__(self, max_usd: float, pricing_table: PricingTable | None = None):
-        self.max_usd = max(0.0, max_usd)
+    def __init__(
+        self,
+        max_usd: float | None = None,
+        pricing_table: PricingTable | None = None,
+        *,
+        max_budget_usd: float | None = None,
+    ):
+        target_max = max_usd if max_usd is not None else max_budget_usd
+        if target_max is None:
+            target_max = 0.0
+        if target_max < 0.0:
+            raise ValueError(f"max_usd cannot be negative, got {target_max}")
+        self.max_usd = float(target_max)
         self.pricing_table = pricing_table
         self.spent_usd: float = 0.0
         self.reserved_usd: float = 0.0
-        self._reservations: dict[str, float] = {}
+        self._reservations: dict[str, dict[str, float | ReservationState]] = {}
+        self._lock = threading.RLock()
 
     @property
     def remaining_budget(self) -> float:
         """Remaining uncommitted budget in USD."""
-        return max(0.0, self.max_usd - (self.spent_usd + self.reserved_usd))
+        with self._lock:
+            return max(0.0, self.max_usd - (self.spent_usd + self.reserved_usd))
+
+    @property
+    def total_spent_usd(self) -> float:
+        """Total spent budget in USD (alias for spent_usd)."""
+        with self._lock:
+            return self.spent_usd
+
+    @property
+    def total_cap_usd(self) -> float:
+        """Total budget cap in USD."""
+        return self.max_usd
+
+    @property
+    def max_budget_usd(self) -> float:
+        """Total budget cap in USD (alias for max_usd)."""
+        return self.max_usd
 
     def estimate_call_cost(
         self, model_id: str, prompt: str, max_tokens: int | None = None
@@ -69,27 +110,49 @@ class RunBudgetTracker:
         Reserves estimated cost prior to dispatch.
         Raises BudgetExceededError if remaining budget cannot cover the call.
         """
-        if estimated_cost > self.remaining_budget:
-            raise BudgetExceededError(
-                f"Estimated call cost ${estimated_cost:.6f} exceeds remaining budget "
-                f"${self.remaining_budget:.6f} (run cap: ${self.max_usd:.6f}).",
-                estimated_cost=estimated_cost,
-                remaining_budget=self.remaining_budget,
-                cap=self.max_usd,
-            )
+        if estimated_cost < 0:
+            raise ValueError("Estimated cost cannot be negative.")
 
-        token = uuid.uuid4().hex
-        self._reservations[token] = estimated_cost
-        self.reserved_usd += estimated_cost
-        return token
+        with self._lock:
+            if estimated_cost > self.remaining_budget:
+                raise BudgetExceededError(
+                    f"Estimated call cost ${estimated_cost:.6f} exceeds remaining budget "
+                    f"${self.remaining_budget:.6f} (run cap: ${self.max_usd:.6f}).",
+                    estimated_cost=estimated_cost,
+                    remaining_budget=self.remaining_budget,
+                    cap=self.max_usd,
+                )
+
+            token = uuid.uuid4().hex
+            self._reservations[token] = {
+                "cost": estimated_cost,
+                "state": ReservationState.RESERVED,
+            }
+            self.reserved_usd += estimated_cost
+            return token
 
     def reconcile(self, token: str, actual_cost: float) -> None:
         """Reconciles reservation with actual calculated cost."""
-        reserved = self._reservations.pop(token, 0.0)
-        self.reserved_usd = max(0.0, self.reserved_usd - reserved)
-        self.spent_usd += max(0.0, actual_cost)
+        if actual_cost < 0:
+            raise ValueError("Actual cost cannot be negative.")
+
+        with self._lock:
+            res = self._reservations.get(token)
+            if not res or res["state"] != ReservationState.RESERVED:
+                return
+
+            res["state"] = ReservationState.RECONCILED
+            reserved = float(res["cost"])
+            self.reserved_usd = max(0.0, self.reserved_usd - reserved)
+            self.spent_usd += actual_cost
 
     def release(self, token: str) -> None:
         """Releases reservation without adding cost (e.g. on call cancellation)."""
-        reserved = self._reservations.pop(token, 0.0)
-        self.reserved_usd = max(0.0, self.reserved_usd - reserved)
+        with self._lock:
+            res = self._reservations.get(token)
+            if not res or res["state"] != ReservationState.RESERVED:
+                return
+
+            res["state"] = ReservationState.RELEASED
+            reserved = float(res["cost"])
+            self.reserved_usd = max(0.0, self.reserved_usd - reserved)

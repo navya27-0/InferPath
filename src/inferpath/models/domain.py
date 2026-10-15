@@ -95,6 +95,7 @@ class RoutingDecision(BaseModel):
     needs_clarification: bool = False
     clarification_prompt: str | None = None
     missing_fields: list[str] = Field(default_factory=list)
+    constraints_satisfied: bool = True
 
     @model_validator(mode="after")
     def sync_route_and_tier(self) -> "RoutingDecision":

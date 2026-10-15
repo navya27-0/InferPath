@@ -460,14 +460,33 @@ class ConstraintAwareRouter(BaseRouter):
             reason = "Tier D pruned due to budget/latency constraints; Tier C selected."
         else:
             # Fallback when constraints cannot be strictly met:
-            if b_max is not None:
+            # Detect conflict cleanly and return a structured decision
+            constraints_met = False
+            if b_max is not None and cost_c > b_max:
                 selected_tier = RouteTier.SMALL_MODEL_C
-                rule_id = "CONSTRAINT_RELAXED_BUDGET"
-                reason = "All model tiers exceeded budget cap; relaxed to lowest-cost Tier C."
+                rule_id = "CONSTRAINTS_UNSATISFIABLE"
+                reason = (
+                    f"Conflicting constraints: minimum quality {q_min:.2f} requires Tier D (cost ${cost_d:.6f}), "
+                    f"which exceeds budget cap ${b_max:.6f}. Relaxed to lowest-cost Tier C."
+                )
+            elif l_max is not None and latency_d > l_max and q_hat_c < q_min:
+                selected_tier = RouteTier.SMALL_MODEL_C
+                rule_id = "CONSTRAINTS_UNSATISFIABLE"
+                reason = (
+                    f"Conflicting constraints: minimum quality {q_min:.2f} requires Tier D (latency {latency_d:.1f}ms), "
+                    f"which exceeds latency cap {l_max:.1f}ms. Relaxed to lowest-latency Tier C."
+                )
+            elif b_max is not None:
+                selected_tier = RouteTier.SMALL_MODEL_C
+                rule_id = "CONSTRAINTS_UNSATISFIABLE"
+                reason = f"All model tiers exceeded budget cap ${b_max:.6f}; relaxed to lowest-cost Tier C."
             else:
                 selected_tier = RouteTier.LARGE_MODEL_D
-                rule_id = "CONSTRAINT_RELAXED_QUALITY"
-                reason = "No tier strictly satisfied all constraints; relaxed to Tier D for maximum quality."
+                rule_id = "CONSTRAINTS_UNSATISFIABLE"
+                reason = (
+                    f"No tier strictly satisfied all constraints (Q_min={q_min:.2f}); "
+                    "relaxed to Tier D for maximum quality."
+                )
 
         time_sensitive = analysis.freshness_needed
         cache_eligible = (
@@ -482,6 +501,7 @@ class ConstraintAwareRouter(BaseRouter):
             reason=reason,
             time_sensitive=time_sensitive,
             cache_eligible=cache_eligible,
+            constraints_satisfied=constraints_met if "constraints_met" in locals() else True,
         )
         self._log_decision_safely(request, decision)
         return decision

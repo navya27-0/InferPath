@@ -272,7 +272,11 @@ class ExperimentHarness:
         pipeline = self._create_pipeline_for_system(system_id=system_id, cache_db_path=db_path)
         oracle_eval = OracleEvaluator(pipeline=pipeline, q_min=self.q_min, judge=self.judge)
 
-        _ = seed
+        # Set explicit reproducible random seed for evaluation
+        import random
+
+        random.seed(seed)
+        np.random.seed(seed % (2**32 - 1))
         # Preserve recorded request order (exact duplicates evaluate cache)
         ordered_items = list(items)
 
@@ -507,6 +511,7 @@ class ExperimentHarness:
             item_logs.append(
                 {
                     "item_id": item.item_id,
+                    "task_family_id": item.task_family_id,
                     "tier": item.tier,
                     "task_category": item.task_category,
                     "prompt": item.prompt,
@@ -517,8 +522,11 @@ class ExperimentHarness:
                     "fallback_occurred": res.fallback_occurred,
                     "cost_usd_calculated": res.cost_usd.value,
                     "latency_ms": res.total_latency_ms.value,
-                    "quality_score": round(final_quality, 3),
+                    "quality_score": round(final_quality, 4),
                     "meets_q_min": meets_q,
+                    "quality_pass": 1.0 if meets_q else 0.0,
+                    "evaluation_status": "evaluated",
+                    "exclusion_reason": None,
                     "oracle_tier": enriched_oracle.oracle_tier.value
                     if enriched_oracle.oracle_tier
                     else None,

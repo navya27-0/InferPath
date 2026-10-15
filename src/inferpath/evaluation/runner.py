@@ -17,7 +17,6 @@ from inferpath.evaluation.harness import (
     SystemExecutionSummary,
 )
 from inferpath.evaluation.human_review import (
-    compute_weighted_cohen_kappa,
     generate_blind_human_review_csv,
 )
 from inferpath.evaluation.stats import (
@@ -76,11 +75,13 @@ def run_full_benchmark_suite(
     ]
 
     all_summaries: dict[str, list[SystemExecutionSummary]] = {}
+    all_system_logs: dict[str, list[list[dict[str, Any]]]] = {}
     representative_outputs: dict[str, dict[str, str]] = {}  # {item_id: {sys_id: text}}
 
     for sys_id in systems:
         print(f"\n--> Running system: {sys_id} ({repeats} runs)...")
         all_summaries[sys_id] = []
+        all_system_logs[sys_id] = []
         for r in range(1, repeats + 1):
             seed = 42 + r * 10
             summary, manifest, logs = harness.run_evaluation(
@@ -93,6 +94,7 @@ def run_full_benchmark_suite(
                 verify_lock=False,  # Unlocked for dev/mock runs
             )
             all_summaries[sys_id].append(summary)
+            all_system_logs[sys_id].append(logs)
 
             # Store representative outputs for human review
             if r == 1:
@@ -130,7 +132,7 @@ def run_full_benchmark_suite(
         f"Savings = ${warm_metrics.cost_savings_usd:.5f}"
     )
 
-    # 4. Generate Blind Human Review CSV
+    # 4. Generate Blind Human Review CSV & Ingest Genuine Ratings (if available)
     print("\n--> Generating Blind Human Review CSV...")
     review_csv_path = harness.base_dir / "human_review_blind.csv"
     test_items = dataset.get_split("test")
@@ -142,113 +144,28 @@ def run_full_benchmark_suite(
     )
     print(f"    Saved blind review CSV to {review_csv_path}")
 
-    # Simulated human-human and human-judge agreement calculation
-    # Simulate dual ratings (30 items, ordinal 1 to 5)
-    r1_ratings = [
-        4,
-        5,
-        3,
-        4,
-        5,
-        4,
-        2,
-        5,
-        4,
-        3,
-        5,
-        4,
-        4,
-        3,
-        5,
-        4,
-        3,
-        5,
-        4,
-        2,
-        4,
-        5,
-        4,
-        3,
-        5,
-        4,
-        4,
-        5,
-        3,
-        4,
-    ]
-    r2_ratings = [
-        4,
-        4,
-        3,
-        4,
-        5,
-        4,
-        3,
-        5,
-        4,
-        3,
-        5,
-        4,
-        3,
-        3,
-        5,
-        4,
-        3,
-        4,
-        4,
-        2,
-        4,
-        5,
-        4,
-        3,
-        5,
-        4,
-        4,
-        5,
-        2,
-        4,
-    ]
-    judge_ratings = [
-        4,
-        5,
-        3,
-        4,
-        4,
-        4,
-        2,
-        5,
-        4,
-        3,
-        5,
-        4,
-        4,
-        3,
-        5,
-        4,
-        3,
-        5,
-        4,
-        3,
-        4,
-        5,
-        4,
-        3,
-        5,
-        4,
-        4,
-        5,
-        3,
-        4,
-    ]
+    # Inspect whether genuine empirical human review ratings are provided
+    ratings_csv_path = harness.base_dir / "human_ratings.csv"
+    if not ratings_csv_path.exists():
+        ratings_csv_path = Path("data") / "human_ratings.csv"
 
-    human_human_kappa = compute_weighted_cohen_kappa(
-        r1_ratings, r2_ratings, categories=[1, 2, 3, 4, 5]
+    from inferpath.evaluation.human_review import (
+        compute_inter_rater_agreement,
+        load_human_review_csv,
     )
-    human_judge_kappa = compute_weighted_cohen_kappa(
-        r1_ratings, judge_ratings, categories=[1, 2, 3, 4, 5]
-    )
-    print(f"    Human-Human Weighted Quadratic Kappa: {human_human_kappa:.3f}")
-    print(f"    Human-Judge Weighted Quadratic Kappa: {human_judge_kappa:.3f}")
+
+    if ratings_csv_path.exists():
+        records = load_human_review_csv(ratings_csv_path)
+        agreement_res = compute_inter_rater_agreement(records)
+        human_human_kappa = agreement_res.get("human_human_kappa")
+        human_judge_kappa = agreement_res.get("human_judge_kappa")
+        agreement_status = agreement_res.get("status", "measured")
+        print(f"    Loaded {len(records)} human review records from {ratings_csv_path}.")
+    else:
+        human_human_kappa = None
+        human_judge_kappa = None
+        agreement_status = "not_established"
+        print("    Inter-rater agreement: Not established (pending empirical human review study).")
 
     # 5. Statistical Aggregations across runs
     print("\n--> Computing Statistical Aggregations & Effect Sizes...")
@@ -268,11 +185,25 @@ def run_full_benchmark_suite(
         energy_stats = compute_repeated_run_summary([s.total_energy_wh for s in summaries])
         water_stats = compute_repeated_run_summary([s.total_water_ml for s in summaries])
 
-        # Clustered bootstrap CI for quality
+        # Clustered bootstrap CI for quality based on genuine item-level outcomes
+        # Extract item-level pass outcomes across repeat evaluations
+        system_runs_logs = all_system_logs.get(sys_id, [])
+        item_outcomes: dict[str, list[float]] = {}
+        for run_logs in system_runs_logs:
+            for log_entry in run_logs:
+                itm_id = log_entry["item_id"]
+                pass_val = 1.0 if log_entry.get("meets_q_min", False) else 0.0
+                item_outcomes.setdefault(itm_id, []).append(pass_val)
+
         family_clusters: dict[str, list[float]] = {}
         for itm in items:
-            family_clusters.setdefault(itm.task_family_id, []).append(qual_stats.mean)
-        bootstrap_ci = compute_clustered_bootstrap_ci(family_clusters)
+            passes = item_outcomes.get(itm.item_id, [])
+            avg_item_pass = sum(passes) / len(passes) if passes else 0.0
+            family_clusters.setdefault(itm.task_family_id, []).append(avg_item_pass)
+
+        bootstrap_ci = compute_clustered_bootstrap_ci(
+            family_clusters, n_resamples=1000, confidence_level=0.95, seed=42
+        )
 
         # Effect size relative to full InferPath (System C)
         curr_costs = [s.total_cost_usd_calculated for s in summaries]
@@ -317,8 +248,13 @@ def run_full_benchmark_suite(
             "config_hash": config_hash,
             "dataset_version": dataset.version,
             "dataset_count": len(items),
+            "human_agreement_status": agreement_status,
             "human_human_kappa": human_human_kappa,
             "human_judge_kappa": human_judge_kappa,
+            "bootstrap_estimator": "clustered_family_bootstrap_percentile",
+            "bootstrap_seed": 42,
+            "bootstrap_resamples": 1000,
+            "confidence_level": 0.95,
         },
         "table_rows": table_rows,
         "markdown_table": md_table,
@@ -339,8 +275,22 @@ def run_full_benchmark_suite(
         )
         f.write(md_table)
         f.write("\n\n### Inter-Rater Agreement\n")
-        f.write(f"- **Human-Human Quadratic Weighted Kappa**: `{human_human_kappa:.3f}`\n")
-        f.write(f"- **Human-Judge Quadratic Weighted Kappa**: `{human_judge_kappa:.3f}`\n\n")
+        if human_human_kappa is not None:
+            f.write(
+                f"- **Human-Human Quadratic Weighted Kappa**: `{human_human_kappa:.3f}` `[MEASURED]`\n"
+            )
+        else:
+            f.write(
+                "- **Human-Human Quadratic Weighted Kappa**: `Not Established` (pending empirical human review study)\n"
+            )
+        if human_judge_kappa is not None:
+            f.write(
+                f"- **Human-Judge Quadratic Weighted Kappa**: `{human_judge_kappa:.3f}` `[MEASURED]`\n\n"
+            )
+        else:
+            f.write(
+                "- **Human-Judge Quadratic Weighted Kappa**: `Not Established` (pending empirical human review study)\n\n"
+            )
         f.write("### Cache Performance (Cold vs Warm)\n")
         f.write(
             f"- **Cold Cache Hit Rate**: `{cold_metrics.hit_rate_overall * 100:.1f}%` (Inappropriate Hits: `{cold_metrics.inappropriate_hits}`)\n"

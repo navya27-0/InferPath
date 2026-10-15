@@ -171,9 +171,16 @@ class RequestPipeline:
             }
         )
 
-        # If rule R01 rejected the request due to privacy policy
-        if decision.rule_id == "R01":
-            raise PrivacyViolationError(decision.reason)
+        # Enforce privacy check on selected route
+        can_tx, tx_reason = self.privacy_enforcer.can_transmit_externally(
+            request, decision.selected_tier
+        )
+        if not can_tx or decision.rule_id == "R01":
+            raise PrivacyViolationError(
+                tx_reason or decision.reason,
+                privacy_class=request.privacy_class.value,
+                target_tier=decision.selected_tier.value,
+            )
 
         # Step 5: Canonical cache key and eligibility
         handler_version = self._get_handler_version(decision)
@@ -198,7 +205,7 @@ class RequestPipeline:
         )
 
         # Step 6: Exact-cache lookup
-        if is_cache_eligible:
+        if is_cache_eligible and self.privacy_enforcer.is_cache_permitted(request):
             cached_output = self.cache.get(cache_key)
             if cached_output:
                 route_trace.append({"step": "cache_lookup", "status": "hit"})
@@ -326,7 +333,15 @@ class RequestPipeline:
                 )
 
         # Step 10: Cache validated eligible result
-        if val_result.is_valid and is_cache_eligible and not output.needs_clarification:
+        store_elig = self.eligibility_policy.check_storage_eligibility(
+            request=request, route=current_tier, output=output, validation_result=val_result
+        )
+        if (
+            val_result.is_valid
+            and store_elig.is_eligible
+            and self.privacy_enforcer.is_cache_permitted(request)
+            and not output.needs_clarification
+        ):
             ttl = self.settings.routing.cache_ttls.get(
                 current_tier.value, self.settings.routing.default_cache_ttl_seconds
             )
@@ -338,6 +353,10 @@ class RequestPipeline:
                 ttl_seconds=ttl,
             )
             route_trace.append({"step": "cache_write", "status": "stored", "ttl": ttl})
+        else:
+            route_trace.append(
+                {"step": "cache_write", "status": "bypassed", "reason": store_elig.bypass_reason}
+            )
 
         # Step 11: Finalize outcome and log telemetry
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -395,9 +414,16 @@ class RequestPipeline:
             }
         )
 
-        # If rule R01 rejected the request due to privacy policy
-        if decision.rule_id == "R01":
-            raise PrivacyViolationError(decision.reason)
+        # Enforce privacy check on selected route
+        can_tx, tx_reason = self.privacy_enforcer.can_transmit_externally(
+            request, decision.selected_tier
+        )
+        if not can_tx or decision.rule_id == "R01":
+            raise PrivacyViolationError(
+                tx_reason or decision.reason,
+                privacy_class=request.privacy_class.value,
+                target_tier=decision.selected_tier.value,
+            )
 
         # Step 5: Canonical cache key and eligibility
         handler_version = self._get_handler_version(decision)
@@ -422,7 +448,7 @@ class RequestPipeline:
         )
 
         # Step 6: Exact-cache lookup
-        if is_cache_eligible:
+        if is_cache_eligible and self.privacy_enforcer.is_cache_permitted(request):
             if hasattr(self.cache, "lookup_async"):
                 cached_output = await self.cache.lookup_async(cache_key)
             elif hasattr(self.cache, "get_async"):
@@ -555,7 +581,15 @@ class RequestPipeline:
                 )
 
         # Step 10: Cache validated eligible result
-        if val_result.is_valid and is_cache_eligible and not output.needs_clarification:
+        store_elig = self.eligibility_policy.check_storage_eligibility(
+            request=request, route=current_tier, output=output, validation_result=val_result
+        )
+        if (
+            val_result.is_valid
+            and store_elig.is_eligible
+            and self.privacy_enforcer.is_cache_permitted(request)
+            and not output.needs_clarification
+        ):
             ttl = self.settings.routing.cache_ttls.get(
                 current_tier.value, self.settings.routing.default_cache_ttl_seconds
             )
@@ -584,6 +618,10 @@ class RequestPipeline:
                     ttl_seconds=ttl,
                 )
             route_trace.append({"step": "cache_write", "status": "stored", "ttl": ttl})
+        else:
+            route_trace.append(
+                {"step": "cache_write", "status": "bypassed", "reason": store_elig.bypass_reason}
+            )
 
         # Step 11: Finalize outcome and log telemetry
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -603,6 +641,16 @@ class RequestPipeline:
         self, request: UserRequest, decision: RoutingDecision, tier: RouteTier
     ) -> HandlerOutput:
         """Dispatches execution to the corresponding handler or adapter."""
+        if tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D):
+            can_tx, tx_reason = self.privacy_enforcer.can_transmit_externally(request, tier)
+            if not can_tx:
+                raise PrivacyViolationError(
+                    tx_reason
+                    or f"Blocked external transmission of {request.privacy_class.value} data.",
+                    privacy_class=request.privacy_class.value,
+                    target_tier=tier.value,
+                )
+
         if tier == RouteTier.DETERMINISTIC_A:
             return self.router.execute_local_handler(request, decision)
 
@@ -655,6 +703,16 @@ class RequestPipeline:
         self, request: UserRequest, decision: RoutingDecision, tier: RouteTier
     ) -> HandlerOutput:
         """Dispatches execution asynchronously to the corresponding handler or adapter."""
+        if tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D):
+            can_tx, tx_reason = self.privacy_enforcer.can_transmit_externally(request, tier)
+            if not can_tx:
+                raise PrivacyViolationError(
+                    tx_reason
+                    or f"Blocked external transmission of {request.privacy_class.value} data.",
+                    privacy_class=request.privacy_class.value,
+                    target_tier=tier.value,
+                )
+
         if tier == RouteTier.DETERMINISTIC_A:
             return self.router.execute_local_handler(request, decision)
 
