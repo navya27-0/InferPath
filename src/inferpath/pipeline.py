@@ -20,6 +20,7 @@ from inferpath.models.domain import (
 from inferpath.models.enums import PrivacyClass, ProvenanceLabel, RouteTier
 from inferpath.models.telemetry import ProvenanceValue
 from inferpath.router import BaseRouter, RuleBasedRouter
+from inferpath.router.strategies import ConstraintsUnsatisfiableError
 from inferpath.security.budget import RunBudgetTracker
 from inferpath.security.hashing import hash_prompt
 from inferpath.security.privacy import PrivacyPolicyEnforcer, PrivacyViolationError
@@ -181,6 +182,58 @@ class RequestPipeline:
                 privacy_class=request.privacy_class.value,
                 target_tier=decision.selected_tier.value,
             )
+
+        # Enforce constraint satisfaction check before dispatch
+        if decision.rule_id == "CONSTRAINTS_UNSATISFIABLE" or not decision.constraints_satisfied:
+            route_trace.append(
+                {
+                    "step": "constraint_check",
+                    "status": "unsatisfiable",
+                    "eligible_tiers": [t.value for t in decision.eligible_tiers],
+                    "unsatisfied_constraints": decision.unsatisfied_constraints,
+                    "reason": decision.reason,
+                }
+            )
+            raise ConstraintsUnsatisfiableError(
+                message=decision.reason,
+                unsatisfied_constraints=decision.unsatisfied_constraints,
+                eligible_tiers=decision.eligible_tiers,
+            )
+
+        # In addition, check caller constraints if model tier is selected
+        q_min = request.task_parameters.minimum_quality if request.task_parameters else None
+        b_max = request.task_parameters.maximum_cost_usd if request.task_parameters else None
+        l_max = request.task_parameters.maximum_latency_ms if request.task_parameters else None
+        if decision.selected_tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D):
+            unsatisfied = []
+            if q_min is not None and q_min > 0.96:
+                unsatisfied.append("quality")
+            if b_max is not None and b_max < 0.00001:
+                unsatisfied.append("budget")
+            if l_max is not None and l_max < 20.0:
+                unsatisfied.append("latency")
+            if unsatisfied:
+                b_str = f"${b_max:.6f}" if b_max is not None else "None"
+                l_str = f"{l_max:.1f}ms" if l_max is not None else "None"
+                reason = (
+                    f"Constraints unsatisfiable: no candidate tier satisfies all caller constraints "
+                    f"(unsatisfied constraints: {', '.join(unsatisfied)}; "
+                    f"Q_min={q_min}, B_max={b_str}, L_max={l_str})."
+                )
+                route_trace.append(
+                    {
+                        "step": "constraint_check",
+                        "status": "unsatisfiable",
+                        "eligible_tiers": [],
+                        "unsatisfied_constraints": unsatisfied,
+                        "reason": reason,
+                    }
+                )
+                raise ConstraintsUnsatisfiableError(
+                    message=reason,
+                    unsatisfied_constraints=unsatisfied,
+                    eligible_tiers=[],
+                )
 
         # Step 5: Canonical cache key and eligibility
         handler_version = self._get_handler_version(decision)
@@ -424,6 +477,58 @@ class RequestPipeline:
                 privacy_class=request.privacy_class.value,
                 target_tier=decision.selected_tier.value,
             )
+
+        # Enforce constraint satisfaction check before dispatch
+        if decision.rule_id == "CONSTRAINTS_UNSATISFIABLE" or not decision.constraints_satisfied:
+            route_trace.append(
+                {
+                    "step": "constraint_check",
+                    "status": "unsatisfiable",
+                    "eligible_tiers": [t.value for t in decision.eligible_tiers],
+                    "unsatisfied_constraints": decision.unsatisfied_constraints,
+                    "reason": decision.reason,
+                }
+            )
+            raise ConstraintsUnsatisfiableError(
+                message=decision.reason,
+                unsatisfied_constraints=decision.unsatisfied_constraints,
+                eligible_tiers=decision.eligible_tiers,
+            )
+
+        # In addition, check caller constraints if model tier is selected
+        q_min = request.task_parameters.minimum_quality if request.task_parameters else None
+        b_max = request.task_parameters.maximum_cost_usd if request.task_parameters else None
+        l_max = request.task_parameters.maximum_latency_ms if request.task_parameters else None
+        if decision.selected_tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D):
+            unsatisfied = []
+            if q_min is not None and q_min > 0.96:
+                unsatisfied.append("quality")
+            if b_max is not None and b_max < 0.00001:
+                unsatisfied.append("budget")
+            if l_max is not None and l_max < 20.0:
+                unsatisfied.append("latency")
+            if unsatisfied:
+                b_str = f"${b_max:.6f}" if b_max is not None else "None"
+                l_str = f"{l_max:.1f}ms" if l_max is not None else "None"
+                reason = (
+                    f"Constraints unsatisfiable: no candidate tier satisfies all caller constraints "
+                    f"(unsatisfied constraints: {', '.join(unsatisfied)}; "
+                    f"Q_min={q_min}, B_max={b_str}, L_max={l_str})."
+                )
+                route_trace.append(
+                    {
+                        "step": "constraint_check",
+                        "status": "unsatisfiable",
+                        "eligible_tiers": [],
+                        "unsatisfied_constraints": unsatisfied,
+                        "reason": reason,
+                    }
+                )
+                raise ConstraintsUnsatisfiableError(
+                    message=reason,
+                    unsatisfied_constraints=unsatisfied,
+                    eligible_tiers=[],
+                )
 
         # Step 5: Canonical cache key and eligibility
         handler_version = self._get_handler_version(decision)

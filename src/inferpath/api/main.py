@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from inferpath.models.domain import TaskParameters, UserRequest
 from inferpath.models.enums import PrivacyClass
 from inferpath.pipeline import PipelineExecutionError, RequestPipeline
+from inferpath.router.strategies import ConstraintsUnsatisfiableError
 from inferpath.security.budget import BudgetExceededError
 from inferpath.security.hashing import scrub_api_keys
 from inferpath.security.privacy import PrivacyViolationError
@@ -167,6 +168,23 @@ def create_app(
                 "remaining_budget": exc.remaining_budget,
                 "cap": exc.cap,
                 "code": "BUDGET_EXCEEDED",
+            },
+        )
+
+    @app.exception_handler(ConstraintsUnsatisfiableError)
+    async def constraints_unsatisfiable_handler(
+        request: Request, exc: ConstraintsUnsatisfiableError
+    ):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "Constraints unsatisfiable",
+                "detail": scrub_api_keys(str(exc)),
+                "code": "CONSTRAINTS_UNSATISFIABLE",
+                "unsatisfied_constraints": exc.unsatisfied_constraints,
+                "eligible_tiers": [
+                    t.value if hasattr(t, "value") else str(t) for t in exc.eligible_tiers
+                ],
             },
         )
 
@@ -345,6 +363,8 @@ def create_app(
         except PrivacyViolationError:
             raise
         except BudgetExceededError:
+            raise
+        except ConstraintsUnsatisfiableError:
             raise
         except PipelineExecutionError as err:
             raise HTTPException(

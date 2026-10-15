@@ -150,16 +150,15 @@ Standard i.i.d. bootstrap resampling underestimates confidence intervals when qu
 - Confidence interval: 95% percentile interval $[\theta_{0.025}, \theta_{0.975}]$.
 - Clustered pass rate for System C: $6.2\%$ with 95% CI $[6.2\%, 6.2\%]$ (zero variance across 3 deterministic simulated benchmark seeds).
 
-### 6.2 Inter-Rater Reliability (Human Agreement)
-A subset of 50 multi-turn queries was independently evaluated by two human raters using a 5-point Likert rubric across accuracy, coherence, and constraint fulfillment:
-- **Cohen's Quadratic Weighted Kappa**: $\kappa = 0.888$ ($p < 0.001$).
-- **Interpretation**: Almost perfect agreement, confirming rubric objectivity.
+### 6.2 Inter-Rater Reliability Protocol (Human Agreement)
+InferPath defines formal inter-rater reliability protocols for human quality validation:
+- **Metric Formulation**: Cohen's Quadratic Weighted Kappa ($\kappa$) with randomized candidate ordering, blind presentation, and privacy-filtered candidate sampling.
+- **Current Status**: *Not established* (`human_agreement_status: not_established`). Metric pipeline is validated via unit tests; empirical multi-annotator trial scores are ingested into `benchmark_summary.json` only when real human review data is collected.
 
-### 6.3 LLM Judge Calibration
-To validate automated evaluation scalability, an automated LLM Judge was calibrated against the consensus human ratings:
-- **LLM Judge vs Human Kappa**: $\kappa = 0.952$ ($p < 0.001$).
-- **Pearson Correlation**: $r = 0.964$.
-- **Conclusion**: Automated judge scoring faithfully mirrors human quality evaluations on the benchmark domain.
+### 6.3 LLM Judge Calibration Protocol
+To validate automated evaluation against human judgment, the harness includes a paired evaluation pipeline:
+- **Protocol**: Compares automated judge ordinal scores against human review consensus across accuracy, constraint satisfaction, and formatting.
+- **Current Status**: *Pending human review data ingestion* (`human_judge_kappa: null`).
 
 ---
 

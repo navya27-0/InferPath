@@ -13,7 +13,7 @@ class RouteTier(StrEnum):
 
 
 class ProvenanceLabel(StrEnum):
-    """Non-negotiable 4-class provenance tagging for every reported metric value."""
+    """Provenance tagging for reported metric values."""
 
     MEASURED = "measured"  # Directly observed in real execution (tokens, latency, status)
     CALCULATED = "calculated"  # Derived deterministically from measured values + dated price table
@@ -21,6 +21,7 @@ class ProvenanceLabel(StrEnum):
         "estimated"  # Derived from model assumptions with low/central/high ranges (energy, water)
     )
     SIMULATED = "simulated"  # Produced by mock adapters or synthetic runs
+    UNAVAILABLE = "unavailable"  # Usage or metric data missing, unparseable, or not reported
 
 
 class PrivacyClass(StrEnum):

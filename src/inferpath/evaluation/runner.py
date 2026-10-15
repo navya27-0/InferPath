@@ -100,7 +100,7 @@ def run_full_benchmark_suite(
             if r == 1:
                 for log in logs:
                     representative_outputs.setdefault(log["item_id"], {})[sys_id] = log.get(
-                        "routed_tier", "output"
+                        "response_text", ""
                     )
 
             print(
@@ -135,11 +135,12 @@ def run_full_benchmark_suite(
     # 4. Generate Blind Human Review CSV & Ingest Genuine Ratings (if available)
     print("\n--> Generating Blind Human Review CSV...")
     review_csv_path = harness.base_dir / "human_review_blind.csv"
-    test_items = dataset.get_split("test")
+    key_csv_path = harness.base_dir / "human_review_key.json"
     generate_blind_human_review_csv(
-        test_items=test_items,
+        test_items=items,
         system_outputs=representative_outputs,
         output_path=review_csv_path,
+        key_path=key_csv_path,
         sample_ratio=0.20,
     )
     print(f"    Saved blind review CSV to {review_csv_path}")

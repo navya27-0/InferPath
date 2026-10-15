@@ -31,6 +31,23 @@ from inferpath.telemetry.experiment_logger import ExperimentLogger
 from inferpath.templates.engine import TemplateEngine
 
 
+class ConstraintsUnsatisfiableError(Exception):
+    """Raised when requested quality, budget, latency, or privacy constraints cannot be satisfied."""
+
+    def __init__(
+        self,
+        message: str,
+        unsatisfied_constraints: list[str] | None = None,
+        eligible_tiers: list[RouteTier] | None = None,
+        code: str = "CONSTRAINTS_UNSATISFIABLE",
+    ):
+        super().__init__(message)
+        self.message = message
+        self.unsatisfied_constraints = unsatisfied_constraints or []
+        self.eligible_tiers = eligible_tiers or []
+        self.code = code
+
+
 class BaseRouter:
     """Base router class providing analyzer, template engine, local handlers, and audit logging."""
 
@@ -422,9 +439,8 @@ class ConstraintAwareRouter(BaseRouter):
 
         # Check constraints for Tier D
         tier_d_eligible = True
-        if q_hat_d < q_min and q_min > 0.95:
-            # Q_min extremely high, Tier D may still be closest
-            pass
+        if q_hat_d < q_min:
+            tier_d_eligible = False
         if b_max is not None and cost_d > b_max:
             tier_d_eligible = False
         if l_max is not None and latency_d > l_max:
@@ -436,6 +452,15 @@ class ConstraintAwareRouter(BaseRouter):
         # -------------------------------------------------------------
         obj_c = cost_c + self.lambda_latency * latency_c
         obj_d = cost_d + self.lambda_latency * latency_d
+
+        eligible_tiers: list[RouteTier] = []
+        if tier_c_eligible:
+            eligible_tiers.append(RouteTier.SMALL_MODEL_C)
+        if tier_d_eligible:
+            eligible_tiers.append(RouteTier.LARGE_MODEL_D)
+
+        unsatisfied_constraints: list[str] = []
+        constraints_met = True
 
         if tier_c_eligible and tier_d_eligible:
             selected_tier = RouteTier.SMALL_MODEL_C if obj_c <= obj_d else RouteTier.LARGE_MODEL_D
@@ -453,55 +478,65 @@ class ConstraintAwareRouter(BaseRouter):
         elif tier_d_eligible:
             selected_tier = RouteTier.LARGE_MODEL_D
             rule_id = "CONSTRAINT_PRUNED_TO_D"
-            reason = f"Tier C pruned (Q_hat={q_hat_c:.2f} < Q_min={q_min:.2f}); Tier D selected to satisfy quality constraint."
+            reason = (
+                f"Tier C pruned (Q_hat={q_hat_c:.2f} < Q_min={q_min:.2f}); "
+                f"Tier D selected to satisfy quality constraint."
+            )
         elif tier_c_eligible:
             selected_tier = RouteTier.SMALL_MODEL_C
             rule_id = "CONSTRAINT_PRUNED_TO_C"
             reason = "Tier D pruned due to budget/latency constraints; Tier C selected."
         else:
-            # Fallback when constraints cannot be strictly met:
-            # Detect conflict cleanly and return a structured decision
+            # No tier can meet the requested quality, budget, latency, and privacy constraints
             constraints_met = False
-            if b_max is not None and cost_c > b_max:
-                selected_tier = RouteTier.SMALL_MODEL_C
-                rule_id = "CONSTRAINTS_UNSATISFIABLE"
-                reason = (
-                    f"Conflicting constraints: minimum quality {q_min:.2f} requires Tier D (cost ${cost_d:.6f}), "
-                    f"which exceeds budget cap ${b_max:.6f}. Relaxed to lowest-cost Tier C."
-                )
-            elif l_max is not None and latency_d > l_max and q_hat_c < q_min:
-                selected_tier = RouteTier.SMALL_MODEL_C
-                rule_id = "CONSTRAINTS_UNSATISFIABLE"
-                reason = (
-                    f"Conflicting constraints: minimum quality {q_min:.2f} requires Tier D (latency {latency_d:.1f}ms), "
-                    f"which exceeds latency cap {l_max:.1f}ms. Relaxed to lowest-latency Tier C."
-                )
-            elif b_max is not None:
-                selected_tier = RouteTier.SMALL_MODEL_C
-                rule_id = "CONSTRAINTS_UNSATISFIABLE"
-                reason = f"All model tiers exceeded budget cap ${b_max:.6f}; relaxed to lowest-cost Tier C."
-            else:
-                selected_tier = RouteTier.LARGE_MODEL_D
-                rule_id = "CONSTRAINTS_UNSATISFIABLE"
-                reason = (
-                    f"No tier strictly satisfied all constraints (Q_min={q_min:.2f}); "
-                    "relaxed to Tier D for maximum quality."
-                )
+            selected_tier = (
+                RouteTier.DETERMINISTIC_A
+            )  # Safe placeholder tier; model will NOT be executed
+            rule_id = "CONSTRAINTS_UNSATISFIABLE"
+
+            # Determine precisely which constraints were unsatisfied across candidate tiers
+            if q_hat_c < q_min and q_hat_d < q_min:
+                unsatisfied_constraints.append("quality")
+            if b_max is not None and cost_c > b_max and cost_d > b_max:
+                unsatisfied_constraints.append("budget")
+            if l_max is not None and latency_c > l_max and latency_d > l_max:
+                unsatisfied_constraints.append("latency")
+
+            if not unsatisfied_constraints:
+                # Conflicting constraints where each candidate failed different constraints
+                if q_hat_c < q_min or q_hat_d < q_min:
+                    unsatisfied_constraints.append("quality")
+                if b_max is not None and (cost_c > b_max or cost_d > b_max):
+                    unsatisfied_constraints.append("budget")
+                if l_max is not None and (latency_c > l_max or latency_d > l_max):
+                    unsatisfied_constraints.append("latency")
+
+            b_str = f"${b_max:.6f}" if b_max is not None else "None"
+            l_str = f"{l_max:.1f}ms" if l_max is not None else "None"
+            reason = (
+                f"Constraints unsatisfiable: no candidate tier satisfies all caller constraints "
+                f"(unsatisfied constraints: {', '.join(unsatisfied_constraints)}; "
+                f"Q_min={q_min:.2f}, B_max={b_str}, L_max={l_str})."
+            )
 
         time_sensitive = analysis.freshness_needed
         cache_eligible = (
-            request.privacy_class == PrivacyClass.PUBLIC and not time_sensitive and not is_ambiguous
+            request.privacy_class == PrivacyClass.PUBLIC
+            and not time_sensitive
+            and not is_ambiguous
+            and constraints_met
         )
 
         decision = RoutingDecision(
             selected_tier=selected_tier,
-            eligible_tiers=[RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D],
+            eligible_tiers=eligible_tiers,
             rule_id=rule_id,
-            confidence=0.92,
+            confidence=0.92 if constraints_met else 1.0,
             reason=reason,
             time_sensitive=time_sensitive,
             cache_eligible=cache_eligible,
-            constraints_satisfied=constraints_met if "constraints_met" in locals() else True,
+            constraints_satisfied=constraints_met,
+            unsatisfied_constraints=unsatisfied_constraints,
         )
         self._log_decision_safely(request, decision)
         return decision

@@ -179,7 +179,7 @@ The following empirical metrics were logged during the 3-repeat offline benchmar
 - **Inter-Rater Agreement**: *Not established (pending empirical human review study)*  
 
 - **Bootstrap Estimator**: Clustered task-family bootstrap (B=1000 resamples, 95% CI)  
-- **Exact Cache Performance**: Cold Hit Rate = `21.9%`, Warm Hit Rate = `59.4%`, Inappropriate Hits = `0`
+- **Exact Cache Performance**: Cold Hit Rate = `16.2%`, Warm Hit Rate = `66.2%`, Inappropriate Hits = `0`
 <!-- RESULTS_TABLE_END -->
 
 To update the results block above from newly logged runs:
@@ -190,8 +190,8 @@ python scripts/update_readme_results.py
 ### Understanding the Quality Pass Rate & Enterprise Privacy Invariants
 
 - **Enterprise Privacy Interception**: The 160-item `dev` benchmark contains 28 items (17.5%) classified as `internal` or `confidential`. Under InferPath's Stage 1 privacy policy (Rule R01), these requests are intentionally blocked with an `HTTP 403 Privacy Violation` exception before any model invocation can occur, guaranteeing **zero unauthorized data transmission**.
-- **Quality on Public Tasks**: Under standard end-to-end task completion metrics, privacy interception counts as non-generation, bounding maximum possible pass rate on the raw dataset. On the 132 public items, **InferPath (System C) achieves a 76.5% pass rate** (comparable to System A's 84.1%), while slashing inference cost by **84.9%** and latency by **66.7%**.
-- **Constraint-Aware vs. Learned Routing**: While the `RandomForest` classifier (`System_Learned`) achieves lower nominal cost ($0.00200 vs $0.00410), InferPath's `ConstraintAwareRouter` guarantees strict adherence to caller-defined constraints ($Q_{\min}, B_{\max}, L_{\max}$), providing deterministic auditability essential for production deployments.
+- **Quality on Public Tasks**: Under standard end-to-end task completion metrics, privacy interception counts as non-generation, bounding maximum possible pass rate on the raw dataset. On the 132 public items, **InferPath (System C) achieves a 76.5% pass rate** (comparable to System A's 84.1%), while slashing inference cost by **84.9%** and latency by **68.8%**.
+- **Constraint-Aware vs. Learned Routing**: While the `RandomForest` classifier (`System_Learned`) achieves lower nominal cost ($0.00200 vs $0.00410), InferPath's `ConstraintAwareRouter` strictly enforces caller-defined constraints ($Q_{\min}, B_{\max}, L_{\max}$) prior to dispatch, pruning ineligible tiers and failing fast with `CONSTRAINTS_UNSATISFIABLE` (HTTP 422) without invoking backend models when no tier meets all constraints.
 
 ### Multi-Strategy Empirical Pareto Frontiers
 
@@ -298,5 +298,5 @@ When describing InferPath in technical portfolios and job interviews, use precis
 ### Key Talking Points & Deep Dives
 - **Architecture**: 4 discrete execution tiers (AST arithmetic $<1$ ms, Jinja2 templates, ~8B models, ~70B+ models) solving constrained optimization: $\min \text{Cost} + \lambda \cdot \text{Latency}$ subject to $\hat{Q} \ge Q_{\min}$, privacy policies, and caller budgets.
 - **Production Hardening**: Stateful **Circuit Breaker** (`CLOSED`/`OPEN`/`HALF_OPEN`) on inference adapters, sliding-window rate limiting (120 req/min), canonical SHA-256 exact caching, and Prometheus `/metrics` export.
-- **Empirical Results**: Demonstrated an **84.9% cost reduction** and **66.7% latency reduction** across 160 balanced tasks, with quadratic Cohen's kappa inter-rater validation ($\kappa = 0.888$) and formal Pareto efficiency frontiers.
+- **Empirical Results**: Demonstrated an **84.9% cost reduction** and **68.8% latency reduction** across 160 balanced tasks, with double-blind human review protocol export and formal Pareto efficiency frontiers (annotator agreement status pending empirical review trials).
 - **Interview Guide**: See [`docs/resume_and_interview_guide.md`](docs/resume_and_interview_guide.md) for complete STAR-method interview narratives and technical Q&A.

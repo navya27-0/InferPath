@@ -112,9 +112,10 @@ def test_openrouter_missing_usage_metadata(sample_pricing_table):
 
     result = adapter.generate("Test prompt")
     assert result.text == "Output without usage"
-    assert result.input_tokens == 0
-    assert result.output_tokens == 0
-    assert result.cost_usd_calculated == 0.0
+    assert result.input_tokens is None
+    assert result.output_tokens is None
+    assert result.cost_usd_calculated is None
+    assert result.usage_available is False
     assert result.provider_reported_cost_usd is None
 
 

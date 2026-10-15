@@ -12,12 +12,14 @@ from typing import Any, Literal
 import numpy as np
 from pydantic import BaseModel
 
+from inferpath.cache.canonical_key import CanonicalKeyBuilder
 from inferpath.cache.exact_cache import ExactCache
 from inferpath.config.settings import load_pricing_table, load_settings
 from inferpath.evaluation.checkers import evaluate_output
 from inferpath.evaluation.dataset import DatasetItem
 from inferpath.evaluation.environmental import EnvironmentalEstimator
 from inferpath.evaluation.freeze_config import (
+    check_git_tree_clean,
     get_git_commit,
     verify_test_config_locked,
 )
@@ -79,6 +81,7 @@ class RunManifest(BaseModel):
     dataset_sha256: str
     config_hash: str
     git_commit: str
+    git_tree_clean: bool = True
     timestamp: str
     random_seed: int
     q_min: float
@@ -350,11 +353,9 @@ class ExperimentHarness:
                     route_trace=[],
                 )
             elif system_id == "System_B":
-                # Cache + Tier A deterministic + Tier D
-                # If deterministic, route A; otherwise route D directly
+                # System B Baseline: Exact Cache + Local Tier A (arithmetic/conversion) + Frontier Tier D
                 if item.task_category == "arithmetic_and_unit_conversion":
                     decision = pipeline.router.route(req)
-                    h_out = pipeline._execute_tier(req, decision, decision.selected_tier)
                 elif item.privacy_class != PrivacyClass.PUBLIC:
                     decision = RoutingDecision(
                         selected_tier=RouteTier.DETERMINISTIC_A,
@@ -362,6 +363,15 @@ class ExperimentHarness:
                         reason="Privacy policy block: private data prohibited from external models",
                         confidence=1.0,
                     )
+                else:
+                    decision = RoutingDecision(
+                        selected_tier=RouteTier.LARGE_MODEL_D,
+                        rule_id="BASELINE_B_LARGE",
+                        reason="System B large model for non-deterministic",
+                        confidence=1.0,
+                    )
+
+                if decision.rule_id == "R01":
                     h_out = HandlerOutput(
                         tier=RouteTier.DETERMINISTIC_A,
                         output_text="[REQUEST BLOCKED: Privacy policy prohibits external transmission]",
@@ -378,33 +388,6 @@ class ExperimentHarness:
                         ),
                         model_version="privacy_block",
                     )
-                else:
-                    decision = RoutingDecision(
-                        selected_tier=RouteTier.LARGE_MODEL_D,
-                        rule_id="BASELINE_B_LARGE",
-                        reason="System B large model for non-deterministic",
-                        confidence=1.0,
-                    )
-                    h_out = pipeline._execute_tier(req, decision, decision.selected_tier)
-
-                # Execute with exact cache check
-                cache_key = f"b_cache_{req.prompt}"
-                cached = pipeline.cache.lookup(cache_key) if item.cache_eligibility else None
-                if cached:
-                    res = pipeline._finalize_result(
-                        request=req,
-                        decision=decision,
-                        output=cached,
-                        was_cached=True,
-                        fallback_occurred=False,
-                        fallback_history=[],
-                        validation_passed=True,
-                        elapsed_ms=1.2,
-                        route_trace=[],
-                    )
-                else:
-                    if item.cache_eligibility and h_out.validated:
-                        pipeline.cache.store(cache_key, req, h_out, decision.selected_tier)
                     res = pipeline._finalize_result(
                         request=req,
                         decision=decision,
@@ -412,10 +395,58 @@ class ExperimentHarness:
                         was_cached=False,
                         fallback_occurred=False,
                         fallback_history=[],
-                        validation_passed=h_out.validated,
-                        elapsed_ms=h_out.latency_ms.value,
+                        validation_passed=False,
+                        elapsed_ms=0.1,
                         route_trace=[],
                     )
+                else:
+                    # Check cache first using canonical key and eligibility mechanisms
+                    is_cache_eligible, _ = pipeline.eligibility_policy.is_eligible(req, decision)
+                    can_cache = (
+                        is_cache_eligible
+                        and item.cache_eligibility
+                        and pipeline.privacy_enforcer.is_cache_permitted(req)
+                    )
+
+                    cache_key = CanonicalKeyBuilder.build_key(
+                        normalized_prompt=req.prompt,
+                        task_parameters=req.task_parameters,
+                        context_hash=req.context_hash,
+                        user_scope=req.user_scope,
+                        selected_route=decision.selected_tier.value,
+                        handler_version="1.0.0",
+                        template_version=None,
+                        privacy_class=req.privacy_class.value,
+                    )
+
+                    cached = pipeline.cache.lookup(cache_key) if can_cache else None
+                    if cached:
+                        res = pipeline._finalize_result(
+                            request=req,
+                            decision=decision,
+                            output=cached,
+                            was_cached=True,
+                            fallback_occurred=False,
+                            fallback_history=[],
+                            validation_passed=True,
+                            elapsed_ms=1.2,
+                            route_trace=[{"step": "cache_lookup", "status": "hit"}],
+                        )
+                    else:
+                        h_out = pipeline._execute_tier(req, decision, decision.selected_tier)
+                        if can_cache and h_out.validated:
+                            pipeline.cache.store(cache_key, req, h_out, decision.selected_tier)
+                        res = pipeline._finalize_result(
+                            request=req,
+                            decision=decision,
+                            output=h_out,
+                            was_cached=False,
+                            fallback_occurred=False,
+                            fallback_history=[],
+                            validation_passed=h_out.validated,
+                            elapsed_ms=h_out.latency_ms.value,
+                            route_trace=[{"step": "cache_lookup", "status": "miss"}],
+                        )
             else:
                 try:
                     res = pipeline.execute(req)
@@ -508,13 +539,21 @@ class ExperimentHarness:
             if enriched_oracle.is_under_escalation:
                 under_esc_count += 1
 
+            is_public = item.privacy_class == PrivacyClass.PUBLIC
+            prompt_sha256 = hashlib.sha256(item.prompt.encode("utf-8")).hexdigest()
+            prompt_text = item.prompt if is_public else "[REDACTED_CONFIDENTIAL]"
+            resp_text = res.final_output if is_public else "[REDACTED_CONFIDENTIAL]"
+
             item_logs.append(
                 {
                     "item_id": item.item_id,
                     "task_family_id": item.task_family_id,
                     "tier": item.tier,
                     "task_category": item.task_category,
-                    "prompt": item.prompt,
+                    "privacy_class": item.privacy_class.value,
+                    "prompt_sha256": prompt_sha256,
+                    "prompt": prompt_text,
+                    "response_text": resp_text,
                     "routed_tier": res.final_tier.value,
                     "rule_id": res.rule_id,
                     "was_cached": res.was_cached,
@@ -584,6 +623,7 @@ class ExperimentHarness:
             dataset_sha256=dataset_sha,
             config_hash=config_hash,
             git_commit=get_git_commit(),
+            git_tree_clean=check_git_tree_clean(),
             timestamp=datetime.now(UTC).isoformat(),
             random_seed=seed,
             q_min=self.q_min,

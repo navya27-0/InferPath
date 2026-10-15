@@ -96,6 +96,7 @@ class RoutingDecision(BaseModel):
     clarification_prompt: str | None = None
     missing_fields: list[str] = Field(default_factory=list)
     constraints_satisfied: bool = True
+    unsatisfied_constraints: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def sync_route_and_tier(self) -> "RoutingDecision":
@@ -110,14 +111,15 @@ class ModelResult(BaseModel):
     """Standardized output produced by ModelAdapter implementations (Prompt 1)."""
 
     text: str
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     latency_ms: float
-    cost_usd_calculated: float
+    cost_usd_calculated: float | None = None
     provider_reported_cost_usd: float | None = None
     price_table_date: str
     source: ProvenanceLabel = ProvenanceLabel.SIMULATED
     model_id: str
+    usage_available: bool = True
 
 
 class ClarificationRequest(BaseModel):

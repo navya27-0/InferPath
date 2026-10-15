@@ -1,5 +1,6 @@
 """Per-run budget tracking, reservation, and reconciliation."""
 
+import collections
 import threading
 import uuid
 from enum import StrEnum
@@ -27,7 +28,14 @@ class BudgetExceededError(ValueError):
 
 class RunBudgetTracker:
     """
-    Manages per-run calculated budget enforcement (MAX_USD_PER_RUN).
+    Manages budget enforcement at run / session scope (MAX_USD_PER_RUN).
+
+    Scope:
+    - Experiment Run / Pipeline Instance Scope.
+    - Tracks and enforces cumulative budget limits across all requests handled by
+      a single pipeline or experiment run instance.
+    - When reused sequentially or concurrently within an application instance,
+      it enforces the cumulative ceiling across all processed calls.
 
     Policy:
     - Tracks cumulative calculated cost across all attempts (including retries and fallback).
@@ -35,6 +43,7 @@ class RunBudgetTracker:
     - Reserves estimated maximum cost prior to dispatch to prevent overspending.
     - Reconciles reservation with actual calculated cost upon response.
     - Rejection of invalid negative parameters.
+    - Bounded retention of completed reservation history (evicts oldest settled entries to prevent unbounded memory growth).
     - Fails fast with BudgetExceededError when budget is insufficient.
 
     Notice:
@@ -48,6 +57,7 @@ class RunBudgetTracker:
         pricing_table: PricingTable | None = None,
         *,
         max_budget_usd: float | None = None,
+        history_limit: int = 1000,
     ):
         target_max = max_usd if max_usd is not None else max_budget_usd
         if target_max is None:
@@ -58,8 +68,24 @@ class RunBudgetTracker:
         self.pricing_table = pricing_table
         self.spent_usd: float = 0.0
         self.reserved_usd: float = 0.0
-        self._reservations: dict[str, dict[str, float | ReservationState]] = {}
+        self._active_reservations: dict[str, float] = {}
+        self._settled_history: collections.deque[tuple[str, float, ReservationState]] = (
+            collections.deque(maxlen=history_limit)
+        )
+        self._settled_tokens: set[str] = set()
         self._lock = threading.RLock()
+
+    @property
+    def _reservations(self) -> dict[str, dict[str, float | ReservationState]]:
+        """Backward-compatible audit dictionary of active and recent settled reservations."""
+        with self._lock:
+            view: dict[str, dict[str, float | ReservationState]] = {
+                t: {"cost": c, "state": ReservationState.RESERVED}
+                for t, c in self._active_reservations.items()
+            }
+            for t, c, state in self._settled_history:
+                view[t] = {"cost": c, "state": state}
+            return view
 
     @property
     def remaining_budget(self) -> float:
@@ -124,10 +150,7 @@ class RunBudgetTracker:
                 )
 
             token = uuid.uuid4().hex
-            self._reservations[token] = {
-                "cost": estimated_cost,
-                "state": ReservationState.RESERVED,
-            }
+            self._active_reservations[token] = estimated_cost
             self.reserved_usd += estimated_cost
             return token
 
@@ -137,22 +160,40 @@ class RunBudgetTracker:
             raise ValueError("Actual cost cannot be negative.")
 
         with self._lock:
-            res = self._reservations.get(token)
-            if not res or res["state"] != ReservationState.RESERVED:
+            reserved = self._active_reservations.pop(token, None)
+            if reserved is None:
                 return
 
-            res["state"] = ReservationState.RECONCILED
-            reserved = float(res["cost"])
             self.reserved_usd = max(0.0, self.reserved_usd - reserved)
             self.spent_usd += actual_cost
+
+            if (
+                self._settled_history.maxlen is not None
+                and len(self._settled_history) == self._settled_history.maxlen
+                and self._settled_history
+            ):
+                evicted_token, _, _ = self._settled_history[0]
+                self._settled_tokens.discard(evicted_token)
+
+            self._settled_history.append((token, actual_cost, ReservationState.RECONCILED))
+            self._settled_tokens.add(token)
 
     def release(self, token: str) -> None:
         """Releases reservation without adding cost (e.g. on call cancellation)."""
         with self._lock:
-            res = self._reservations.get(token)
-            if not res or res["state"] != ReservationState.RESERVED:
+            reserved = self._active_reservations.pop(token, None)
+            if reserved is None:
                 return
 
-            res["state"] = ReservationState.RELEASED
-            reserved = float(res["cost"])
             self.reserved_usd = max(0.0, self.reserved_usd - reserved)
+
+            if (
+                self._settled_history.maxlen is not None
+                and len(self._settled_history) == self._settled_history.maxlen
+                and self._settled_history
+            ):
+                evicted_token, _, _ = self._settled_history[0]
+                self._settled_tokens.discard(evicted_token)
+
+            self._settled_history.append((token, 0.0, ReservationState.RELEASED))
+            self._settled_tokens.add(token)

@@ -8,9 +8,9 @@ This guide provides precise, high-impact resume phrasing, STAR-method interview 
 
 ### Option A: AI Systems & Inference Infrastructure Engineer (Recommended)
 - **Engineered InferPath**, an asynchronous multi-tier AI inference router (FastAPI, Python 3.11, aiosqlite) that dynamically cascades user requests across 4 execution tiers: deterministic AST math ($<1$ ms), Jinja2 templates, lightweight models (~8B), and frontier LLMs (~70B+).
-- **Formulated a constrained multi-objective optimizer** ($\min \text{Cost} + \lambda \cdot \text{Latency}$ s.t. $\hat{Q} \ge Q_{\min}$) coupled with an ex-post **Oracle baseline**, achieving **84.9% cost reduction** and **66.7% latency reduction** while bounding quality loss to 6.3% on public tasks.
+- **Formulated a constrained multi-objective optimizer** ($\min \text{Cost} + \lambda \cdot \text{Latency}$ s.t. $\hat{Q} \ge Q_{\min}$) coupled with an ex-post **Oracle baseline**, achieving **84.9% cost reduction** and **68.8% latency reduction** while bounding quality loss to 6.3% on public tasks.
 - **Architected enterprise guardrails**: Zero-leakage Stage 1 privacy enforcer (HTTP 403), stateful **Circuit Breaker** (CLOSED/OPEN/HALF_OPEN), sliding-window rate limiter (120 req/min), canonical SHA-256 exact-response cache, and native Prometheus `/metrics` exposition.
-- **Built an empirical research evaluation harness** benchmarking 5 routing architectures and 5 ablations across 160 balanced tasks with clustered bootstrap confidence intervals and quadratic Cohen's kappa inter-rater validation ($\kappa = 0.888$).
+- **Built an empirical research evaluation harness** benchmarking 5 routing architectures and 5 ablations across 160 balanced tasks with clustered bootstrap confidence intervals and double-blind human review export protocols.
 
 ### Option B: ML Systems & Backend Platform Engineer
 - Developed a high-throughput AI gateway and routing framework processing 46+ concurrent requests per second with $<20$ ms median latency and 100% reliability under concurrent stress testing.
@@ -21,7 +21,7 @@ This guide provides precise, high-impact resume phrasing, STAR-method interview 
 ### Option C: Research Engineer / Applied AI Scientist
 - Designed and benchmarked a resource-aware AI inference cascade investigating trade-offs between frontier model capabilities and resource consumption under formal privacy and latency constraints.
 - Established the empirical Pareto frontier across rule-based, constraint-aware, machine-learned (RandomForest), and ex-post Oracle routing strategies.
-- Enforced strict statistical integrity: clustered bootstrap confidence intervals on semantic task families, Cliff's delta effect sizes ($d = -1.00$), and blind human-vs-judge rating calibration ($\kappa = 0.952$).
+- Enforced strict statistical integrity: clustered bootstrap confidence intervals on semantic task families, Cliff's delta effect sizes ($d = -1.00$), and double-blind candidate review export protocols.
 
 ---
 

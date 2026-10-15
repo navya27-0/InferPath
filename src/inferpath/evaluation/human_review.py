@@ -1,6 +1,8 @@
 """Blind human review dataset sampling, CSV generation, and inter-rater agreement."""
 
 import csv
+import json
+import logging
 import random
 from io import StringIO
 from pathlib import Path
@@ -9,6 +11,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from inferpath.evaluation.dataset import DatasetItem
+from inferpath.models.enums import PrivacyClass
 
 
 class HumanReviewRecord(BaseModel):
@@ -218,18 +221,33 @@ def generate_blind_human_review_csv(
     test_items: list[DatasetItem],
     system_outputs: dict[str, dict[str, str]],  # {item_id: {system_id: output_text}}
     output_path: Path | str | None = None,
+    key_path: Path | str | None = None,
     sample_ratio: float = 0.20,
     seed: int = 42,
 ) -> str:
     """
     Generates a blinded human review CSV with randomized candidate order and no model identities.
     Ensures stratified representation across every (tier, task_category) stratum.
+    Enforces privacy policy: non-public items are strictly excluded from human review export.
+    Never silently substitutes mock/placeholder responses.
     """
     rng = random.Random(seed)
 
-    # Stratified sampling
-    strata: dict[tuple[str, str], list[DatasetItem]] = {}
+    # 1. Enforce privacy policy: only export public items
+    eligible_items: list[DatasetItem] = []
     for item in test_items:
+        p_class = getattr(item, "privacy_class", PrivacyClass.PUBLIC)
+        if isinstance(p_class, str):
+            try:
+                p_class = PrivacyClass(p_class)
+            except ValueError:
+                p_class = PrivacyClass.CONFIDENTIAL_PRIVATE
+        if p_class == PrivacyClass.PUBLIC:
+            eligible_items.append(item)
+
+    # 2. Stratified sampling across eligible public items
+    strata: dict[tuple[str, str], list[DatasetItem]] = {}
+    for item in eligible_items:
         key = (item.tier, item.task_category)
         strata.setdefault(key, []).append(item)
 
@@ -239,10 +257,11 @@ def generate_blind_human_review_csv(
         sample_count = max(1, int(round(len(items) * sample_ratio)))
         sampled_items.extend(rng.sample(items, min(sample_count, len(items))))
 
-    # At least 30 items for dual review
-    if len(sampled_items) < 30 and len(test_items) >= 30:
-        remaining = [item for item in test_items if item not in sampled_items]
-        sampled_items.extend(rng.sample(remaining, 30 - len(sampled_items)))
+    # At least 30 items for dual review (if available)
+    if len(sampled_items) < 30 and len(eligible_items) >= 30:
+        remaining = [item for item in eligible_items if item not in sampled_items]
+        needed = min(30 - len(sampled_items), len(remaining))
+        sampled_items.extend(rng.sample(remaining, needed))
 
     # Output CSV buffer
     buffer = StringIO()
@@ -267,24 +286,43 @@ def generate_blind_human_review_csv(
     writer.writerow(headers)
 
     review_count = 1
-    # Systems to compare blindly: e.g. Baseline A (large only) vs Full InferPath C
+    unblinding_keys: dict[str, Any] = {}
+    missing_items: list[str] = []
+
     for item in sampled_items:
         outputs = system_outputs.get(item.item_id, {})
-        text_a = outputs.get(
-            "System_A", outputs.get("large_only", "Mock Large Baseline completion")
-        )
-        text_b = outputs.get("System_C", outputs.get("full_inferpath", "Mock InferPath completion"))
+        text_a = outputs.get("System_A") or outputs.get("large_only")
+        text_b = outputs.get("System_C") or outputs.get("full_inferpath")
+
+        # Never silently substitute placeholder responses; report missing candidate outputs
+        if (
+            not text_a
+            or not text_b
+            or text_a == "[REDACTED_CONFIDENTIAL]"
+            or text_b == "[REDACTED_CONFIDENTIAL]"
+        ):
+            missing_items.append(item.item_id)
+            continue
 
         # Randomize assignment to Candidate A vs Candidate B
         if rng.random() > 0.5:
             cand_a, cand_b = text_a, text_b
+            sys_a, sys_b = "System_A", "System_C"
         else:
             cand_a, cand_b = text_b, text_a
+            sys_a, sys_b = "System_C", "System_A"
+
+        rev_id_1 = f"REV_{review_count:04d}_R1"
+        unblinding_keys[rev_id_1] = {
+            "item_id": item.item_id,
+            "candidate_a_system": sys_a,
+            "candidate_b_system": sys_b,
+        }
 
         # Primary review
         writer.writerow(
             [
-                f"REV_{review_count:04d}_R1",
+                rev_id_1,
                 item.item_id,
                 item.tier,
                 item.task_category,
@@ -302,9 +340,15 @@ def generate_blind_human_review_csv(
 
         # Dual independent review for the first 35 items
         if review_count <= 35:
+            rev_id_2 = f"REV_{review_count:04d}_R2"
+            unblinding_keys[rev_id_2] = {
+                "item_id": item.item_id,
+                "candidate_a_system": sys_a,
+                "candidate_b_system": sys_b,
+            }
             writer.writerow(
                 [
-                    f"REV_{review_count:04d}_R2",
+                    rev_id_2,
                     item.item_id,
                     item.tier,
                     item.task_category,
@@ -322,11 +366,24 @@ def generate_blind_human_review_csv(
 
         review_count += 1
 
+    if missing_items:
+        logging.getLogger(__name__).warning(
+            "Omitted %d items from blind human review sheet due to missing candidate outputs: %s",
+            len(missing_items),
+            missing_items[:5],
+        )
+
     csv_content = buffer.getvalue()
     if output_path:
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         with open(out, "w", encoding="utf-8", newline="") as f:
             f.write(csv_content)
+
+    if key_path:
+        k_out = Path(key_path)
+        k_out.parent.mkdir(parents=True, exist_ok=True)
+        with open(k_out, "w", encoding="utf-8") as f:
+            json.dump(unblinding_keys, f, indent=2)
 
     return csv_content

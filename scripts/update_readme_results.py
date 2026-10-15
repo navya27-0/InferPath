@@ -72,17 +72,30 @@ def generate_results_markdown() -> str:
         real_runs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         latest_real = real_runs[0]
         m_path = latest_real["_manifest_path"]
+        m = latest_real.get("summary_metrics", {})
+        total_items = m.get("total_items", 0)
+        split_name = latest_real.get("split", "N/A")
+        is_partial = total_items < 80 or "sample" in split_name.lower()
+
+        if is_partial:
+            lines.append(
+                f"> **Notice**: *Partial Real-Provider Evaluation Sample ({total_items} items, split: `{split_name}`)*. "
+                "This trial was executed on an exploratory sub-sample and does not represent a full benchmark split."
+            )
+            lines.append("> ")
         lines.append(
             f"Latest real-provider run: [`{latest_real.get('run_id')}`]({m_path}) "
-            f"| Split: `{latest_real.get('split')}` | Model: `{latest_real.get('model_id', 'N/A')}`"
+            f"| Split: `{split_name}` | Items: `{total_items}` | Model: `{latest_real.get('model_id', 'N/A')}`"
         )
         lines.append("")
-        lines.append("| System | Quality Pass Rate | Latency (ms) | Cost (USD) | Provenance |")
-        lines.append("| :--- | :--- | :--- | :--- | :--- |")
-        m = latest_real.get("summary_metrics", {})
         lines.append(
-            f"| {latest_real.get('system_id')} | {m.get('quality_pass_rate', 'N/A')} | "
-            f"{m.get('avg_latency_ms', 'N/A')} ms | ${m.get('total_cost_usd_calculated', 'N/A')} | `[MEASURED]` |"
+            "| System | Items | Quality Pass Rate | Latency (ms) | Cost (USD) | Status | Provenance |"
+        )
+        lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+        status_label = "[PARTIAL SAMPLE]" if is_partial else "[COMPLETE]"
+        lines.append(
+            f"| {latest_real.get('system_id')} | {total_items} | {m.get('quality_pass_rate', 'N/A')} | "
+            f"{m.get('avg_latency_ms', 'N/A')} ms | ${m.get('total_cost_usd_calculated', 'N/A')} | `{status_label}` | `[MEASURED]` |"
         )
 
     lines.append("")
@@ -135,9 +148,16 @@ def generate_results_markdown() -> str:
             lines.append(
                 "- **Inter-Rater Agreement**: *Not established (pending empirical human review study)*  \n"
             )
+
+        cold = summary.get("cold_cache_metrics", {})
+        warm = summary.get("warm_cache_metrics", {})
+        cold_rate = f"{cold.get('hit_rate_overall', 0.0) * 100:.1f}%" if cold else "N/A"
+        warm_rate = f"{warm.get('hit_rate_overall', 0.0) * 100:.1f}%" if warm else "N/A"
+        inapp_hits = cold.get("inappropriate_hits", 0) if cold else 0
+
         lines.append(
             f"- **Bootstrap Estimator**: Clustered task-family bootstrap (B={meta.get('bootstrap_resamples', 1000)} resamples, 95% CI)  \n"
-            f"- **Exact Cache Performance**: Cold Hit Rate = `21.9%`, Warm Hit Rate = `59.4%`, Inappropriate Hits = `0`"
+            f"- **Exact Cache Performance**: Cold Hit Rate = `{cold_rate}`, Warm Hit Rate = `{warm_rate}`, Inappropriate Hits = `{inapp_hits}`"
         )
     else:
         lines.append(

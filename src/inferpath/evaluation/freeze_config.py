@@ -52,7 +52,7 @@ def compute_config_hash(config_dict: dict[str, Any] | None = None) -> str:
 
 
 def get_git_commit(cwd: Path | str | None = None) -> str:
-    """Retrieves current HEAD commit hash via git rev-parse."""
+    """Retrieves current HEAD commit hash via git rev-parse, appending -dirty if uncommitted."""
     try:
         res = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -61,7 +61,10 @@ def get_git_commit(cwd: Path | str | None = None) -> str:
             text=True,
             check=True,
         )
-        return res.stdout.strip()
+        commit = res.stdout.strip()
+        if not check_git_tree_clean(cwd):
+            commit = f"{commit}-dirty"
+        return commit
     except Exception:
         return "uncommitted_git_fallback"
 

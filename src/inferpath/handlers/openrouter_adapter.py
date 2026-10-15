@@ -187,28 +187,34 @@ class OpenRouterAdapter:
             raise OpenRouterResponseError("Provider response message content is missing or null.")
 
         usage = data.get("usage")
-        if usage is not None and not isinstance(usage, dict):
-            usage = {}
-        usage = usage or {}
+        usage_available = False
+        input_tokens: int | None = None
+        output_tokens: int | None = None
+        cost_calculated: float | None = None
 
-        try:
-            input_tokens = max(0, int(usage.get("prompt_tokens") or 0))
-        except (ValueError, TypeError):
-            input_tokens = 0
+        if isinstance(usage, dict):
+            raw_p = usage.get("prompt_tokens")
+            raw_c = usage.get("completion_tokens")
+            if raw_p is not None and raw_c is not None:
+                try:
+                    p_tok = int(raw_p)
+                    c_tok = int(raw_c)
+                    if p_tok >= 0 and c_tok >= 0:
+                        input_tokens = p_tok
+                        output_tokens = c_tok
+                        cost_calculated = self._calculate_cost(input_tokens, output_tokens)
+                        usage_available = True
+                except (ValueError, TypeError):
+                    input_tokens = None
+                    output_tokens = None
+                    cost_calculated = None
+                    usage_available = False
 
-        try:
-            output_tokens = max(0, int(usage.get("completion_tokens") or 0))
-        except (ValueError, TypeError):
-            output_tokens = 0
-
-        # Calculated cost from verified/dated price table
-        cost_calculated = self._calculate_cost(input_tokens, output_tokens)
-
-        # Provider-reported cost (if reported by provider or OpenRouter usage header)
-        provider_cost = usage.get("cost")
-        if provider_cost is not None:
+        # Provider-reported cost (ONLY if explicitly reported by provider)
+        provider_cost = None
+        if isinstance(usage, dict) and "cost" in usage and usage["cost"] is not None:
             try:
-                provider_cost = float(provider_cost)
+                provider_cost = float(usage["cost"])
             except (ValueError, TypeError):
                 provider_cost = None
 
@@ -220,8 +226,9 @@ class OpenRouterAdapter:
             cost_usd_calculated=cost_calculated,
             provider_reported_cost_usd=provider_cost,
             price_table_date=self.price_table_date,
-            source=ProvenanceLabel.MEASURED,
+            source=ProvenanceLabel.MEASURED if usage_available else ProvenanceLabel.UNAVAILABLE,
             model_id=self.model_id,
+            usage_available=usage_available,
         )
 
     def generate(self, prompt: str, **params: Any) -> ModelResult:
@@ -259,9 +266,12 @@ class OpenRouterAdapter:
 
                         # Reconcile budget
                         if self.budget_tracker and reservation_token:
-                            self.budget_tracker.reconcile(
-                                reservation_token, result.cost_usd_calculated
+                            actual_cost = (
+                                result.cost_usd_calculated
+                                if result.cost_usd_calculated is not None
+                                else est_cost
                             )
+                            self.budget_tracker.reconcile(reservation_token, actual_cost)
                         return result
 
                     # Non-retryable auth errors
@@ -348,9 +358,12 @@ class OpenRouterAdapter:
                         result = self._parse_response_body(data, latency_ms)
 
                         if self.budget_tracker and reservation_token:
-                            self.budget_tracker.reconcile(
-                                reservation_token, result.cost_usd_calculated
+                            actual_cost = (
+                                result.cost_usd_calculated
+                                if result.cost_usd_calculated is not None
+                                else est_cost
                             )
+                            self.budget_tracker.reconcile(reservation_token, actual_cost)
                         return result
 
                     if response.status_code in (401, 403):

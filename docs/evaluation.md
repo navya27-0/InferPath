@@ -44,9 +44,8 @@ The evaluation rigorously tests five candidate routing architectures (**System A
 ### RQ3: Is Output Quality and Correctness Maintained?
 
 **Verdict: YES.**
-- System C achieved high quality ($63.1\% \pm 0.00\%$, with 95% clustered bootstrap confidence interval $[63.1\%, 63.1\%]$ on the full dev split, and $76.5\%$ on public items).
-- Inter-rater agreement between independent human evaluations yielded a quadratic weighted Cohen's kappa of **$\kappa = 0.8882$** (almost perfect agreement).
-- Calibration between human ratings and LLM Judge evaluations yielded **$\kappa = 0.9523$**, confirming that automated scoring faithfully tracks human quality judgment.
+- **Inter-Rater Reliability Protocol**: Quadratic weighted Cohen's $\kappa$ evaluation pipeline implemented in `src/inferpath/evaluation/stats.py` with double-blind candidate randomization and privacy filtering (`src/inferpath/evaluation/human_review.py`). Annotator agreement status is currently *not established* (`human_agreement_status: not_established`), pending empirical human review trials.
+- **LLM Judge Calibration**: Automated judge scoring evaluates accuracy and format adherence; calibration against human review ratings is designed to compute once empirical human review data is ingested.
 
 ### RQ4: Is InferPath Environmentally More Sustainable?
 
