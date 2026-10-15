@@ -61,6 +61,14 @@ SENSITIVE_CONTENT_PATTERNS = [
     ),
 ]
 
+
+def contains_sensitive_patterns(text: str | None) -> bool:
+    """Checks whether text matches any sensitive token, credential, or confidential pattern."""
+    if not text:
+        return False
+    return any(pattern.search(text) for pattern in SENSITIVE_CONTENT_PATTERNS)
+
+
 # Template intent keywords
 TEMPLATE_TRIGGERS: dict[str, list[re.Pattern]] = {
     "leave_application": [

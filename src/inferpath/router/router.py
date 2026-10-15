@@ -19,7 +19,7 @@ from inferpath.handlers.json_validator import JSONSchemaValidator
 from inferpath.handlers.unit_converter import UnitConverter
 from inferpath.models.domain import HandlerOutput, RoutingDecision, UserRequest
 from inferpath.models.enums import PrivacyClass, RouteTier
-from inferpath.router.analyzer import RequestAnalysis, RequestAnalyzer
+from inferpath.router.analyzer import RequestAnalysis, RequestAnalyzer, contains_sensitive_patterns
 from inferpath.security.hashing import hash_prompt
 from inferpath.security.privacy import PrivacyPolicyEnforcer, PrivacyViolationError
 from inferpath.telemetry.experiment_logger import ExperimentLogger
@@ -284,8 +284,10 @@ class RuleBasedRouter:
             "time_sensitive": decision.time_sensitive,
             "cache_eligible": decision.cache_eligible,
         }
-        # Only log raw prompt sample if public
-        if request.privacy_class == PrivacyClass.PUBLIC:
+        # Only log raw prompt sample if public and contains no sensitive patterns
+        if request.privacy_class == PrivacyClass.PUBLIC and not contains_sensitive_patterns(
+            request.prompt
+        ):
             metadata["prompt_preview"] = request.prompt[:100]
 
         # Use structured logging without exposing secrets

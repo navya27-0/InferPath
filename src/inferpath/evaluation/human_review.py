@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from inferpath.evaluation.dataset import DatasetItem
 from inferpath.models.enums import PrivacyClass
+from inferpath.router.analyzer import contains_sensitive_patterns
 
 
 class HumanReviewRecord(BaseModel):
@@ -24,7 +25,7 @@ class HumanReviewRecord(BaseModel):
     score: int = Field(ge=1, le=5, description="Ordinal quality score from 1 to 5")
     rubric_version: str = Field(default="1.0.0", description="Rubric version applied")
     provenance: str = Field(
-        default="measured", description="Rating provenance (measured / synthetic)"
+        default="unknown", description="Rating provenance (measured / synthetic / unknown)"
     )
     rationale: str | None = Field(default=None, description="Reviewer justification or notes")
     disagreement_notes: str | None = Field(
@@ -49,55 +50,65 @@ def load_human_review_csv(csv_path: Path | str) -> list[HumanReviewRecord]:
     if not path.exists():
         return []
 
+    def _parse_strict_rating(score_str: str) -> int | None:
+        score_str = score_str.strip()
+        if not score_str:
+            return None
+        try:
+            val_float = float(score_str)
+            if not val_float.is_integer():
+                return None
+            val_int = int(val_float)
+            if 1 <= val_int <= 5:
+                return val_int
+            return None
+        except (ValueError, TypeError):
+            return None
+
     records: list[HumanReviewRecord] = []
     with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            prov = row.get("provenance", "measured").strip().lower() or "measured"
+            raw_prov = row.get("provenance")
+            prov = raw_prov.strip().lower() if raw_prov and raw_prov.strip() else "unknown"
 
             # Check candidate A score
             score_a_str = row.get("score_a_1_to_5", "").strip()
             if score_a_str:
-                try:
-                    s_a = int(float(score_a_str))
-                    if 1 <= s_a <= 5:
-                        records.append(
-                            HumanReviewRecord(
-                                review_id=f"{row.get('review_id', 'REV')}_A",
-                                item_id=row.get("item_id", ""),
-                                reviewer_id=row.get("reviewer_id", "anonymous"),
-                                candidate_id="candidate_a",
-                                score=s_a,
-                                rubric_version="1.0.0",
-                                provenance=prov,
-                                rationale=row.get("rationale"),
-                                disagreement_notes=row.get("disagreement_notes"),
-                            )
+                s_a = _parse_strict_rating(score_a_str)
+                if s_a is not None:
+                    records.append(
+                        HumanReviewRecord(
+                            review_id=f"{row.get('review_id', 'REV')}_A",
+                            item_id=row.get("item_id", ""),
+                            reviewer_id=row.get("reviewer_id", "anonymous"),
+                            candidate_id="candidate_a",
+                            score=s_a,
+                            rubric_version="1.0.0",
+                            provenance=prov,
+                            rationale=row.get("rationale"),
+                            disagreement_notes=row.get("disagreement_notes"),
                         )
-                except (ValueError, TypeError):
-                    pass
+                    )
 
             # Check candidate B score
             score_b_str = row.get("score_b_1_to_5", "").strip()
             if score_b_str:
-                try:
-                    s_b = int(float(score_b_str))
-                    if 1 <= s_b <= 5:
-                        records.append(
-                            HumanReviewRecord(
-                                review_id=f"{row.get('review_id', 'REV')}_B",
-                                item_id=row.get("item_id", ""),
-                                reviewer_id=row.get("reviewer_id", "anonymous"),
-                                candidate_id="candidate_b",
-                                score=s_b,
-                                rubric_version="1.0.0",
-                                provenance=prov,
-                                rationale=row.get("rationale"),
-                                disagreement_notes=row.get("disagreement_notes"),
-                            )
+                s_b = _parse_strict_rating(score_b_str)
+                if s_b is not None:
+                    records.append(
+                        HumanReviewRecord(
+                            review_id=f"{row.get('review_id', 'REV')}_B",
+                            item_id=row.get("item_id", ""),
+                            reviewer_id=row.get("reviewer_id", "anonymous"),
+                            candidate_id="candidate_b",
+                            score=s_b,
+                            rubric_version="1.0.0",
+                            provenance=prov,
+                            rationale=row.get("rationale"),
+                            disagreement_notes=row.get("disagreement_notes"),
                         )
-                except (ValueError, TypeError):
-                    pass
+                    )
 
     return records
 
@@ -270,7 +281,7 @@ def generate_blind_human_review_csv(
                 p_class = PrivacyClass(p_class)
             except ValueError:
                 p_class = PrivacyClass.CONFIDENTIAL_PRIVATE
-        if p_class == PrivacyClass.PUBLIC:
+        if p_class == PrivacyClass.PUBLIC and not contains_sensitive_patterns(item.prompt):
             eligible_items.append(item)
 
     # 2. Stratified sampling across eligible public items
@@ -328,6 +339,7 @@ def generate_blind_human_review_csv(
             or not text_b
             or text_a == "[REDACTED_CONFIDENTIAL]"
             or text_b == "[REDACTED_CONFIDENTIAL]"
+            or contains_sensitive_patterns(item.prompt)
         ):
             missing_items.append(item.item_id)
             continue

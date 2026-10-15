@@ -142,11 +142,15 @@ class PrivacyPolicyEnforcer:
         """
         prompt_digest = hash_prompt(request.prompt)
 
-        # Only public requests may have truncated preview samples stored
-        if request.privacy_class == PrivacyClass.PUBLIC:
+        # Only public requests without sensitive patterns may have truncated preview samples stored
+        from inferpath.router.analyzer import contains_sensitive_patterns
+
+        if request.privacy_class == PrivacyClass.PUBLIC and not contains_sensitive_patterns(
+            request.prompt
+        ):
             prompt_sample = scrub_api_keys(request.prompt[:120])
         else:
-            prompt_sample = None  # Strictly null for internal/private
+            prompt_sample = None  # Strictly null for internal/private or sensitive
 
         # Scrub metadata of credentials and private prompt content
         clean_metadata: dict[str, Any] = {}

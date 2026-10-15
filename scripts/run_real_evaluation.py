@@ -70,6 +70,7 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
         judge_model_id=settings.openrouter.small_model,
         api_key=api_key,
         base_url=settings.openrouter.base_url,
+        budget_tracker=budget_tracker,
     )
 
     harness = ExperimentHarness(
@@ -96,11 +97,17 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
                 config_hash="live_evaluation_pilot",
                 verify_lock=False,
             )
+            eval_total_cost = getattr(
+                summary, "total_evaluation_cost_usd", summary.total_cost_usd_calculated
+            )
+            judge_total_cost = getattr(summary, "total_judge_cost_usd", 0.0)
             summary_results.append(
                 {
                     "system": sys_id,
                     "quality_pass_rate": summary.quality_pass_rate,
-                    "total_cost_usd": summary.total_cost_usd_calculated,
+                    "generation_cost_usd": summary.total_cost_usd_calculated,
+                    "judge_cost_usd": judge_total_cost,
+                    "total_cost_usd": eval_total_cost,
                     "avg_latency_ms": summary.avg_latency_ms,
                     "p95_latency_ms": summary.p95_latency_ms,
                     "cache_hit_rate": summary.cache_hit_rate,
@@ -109,7 +116,9 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
             )
             print(
                 f"    Completed {sys_id}: Quality={summary.quality_pass_rate * 100:.1f}%, "
-                f"Cost=${summary.total_cost_usd_calculated:.5f}, "
+                f"Generation Cost=${summary.total_cost_usd_calculated:.5f}, "
+                f"Judge Cost=${judge_total_cost:.5f}, "
+                f"Total Cost=${eval_total_cost:.5f}, "
                 f"Latency={summary.avg_latency_ms:.1f}ms, "
                 f"Fallback={summary.fallback_rate * 100:.1f}%"
             )
@@ -129,6 +138,13 @@ def run_real_evaluation(sample_size: int = 20, max_budget_usd: float = 2.0) -> i
                 "quality_assessment_method": f"OpenRouterJudge ({settings.openrouter.small_model})",
                 "judge_provenance": "measured",
                 "failed_systems": failed_systems,
+                "total_cost_usd": round(sum(r["total_cost_usd"] for r in summary_results), 6),
+                "total_generation_cost_usd": round(
+                    sum(r["generation_cost_usd"] for r in summary_results), 6
+                ),
+                "total_judge_cost_usd": round(sum(r["judge_cost_usd"] for r in summary_results), 6),
+                "budget_cap_usd": max_budget_usd,
+                "budget_spent_usd": round(budget_tracker.total_spent_usd, 6),
                 "results": summary_results,
             },
             f,

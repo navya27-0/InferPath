@@ -1,7 +1,8 @@
 """LLM Judge interface and mock/real implementations for InferPath evaluation."""
 
+import contextlib
 import time
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -115,10 +116,14 @@ class OpenRouterJudge:
         judge_model_id: str = "openai/gpt-4o-mini",
         api_key: str = "",
         base_url: str = "https://openrouter.ai/api/v1",
+        budget_tracker: Any = None,
+        pricing_table: Any = None,
     ):
         self.judge_model_id = judge_model_id
         self.api_key = api_key
         self.base_url = base_url
+        self.budget_tracker = budget_tracker
+        self.pricing_table = pricing_table
 
     def evaluate(
         self,
@@ -134,6 +139,8 @@ class OpenRouterJudge:
 
         import httpx
 
+        from inferpath.security.budget import BudgetExceededError
+
         prompt = f"""You are an impartial expert evaluator. Evaluate the candidate response on a scale of 0.0 to 1.0.
 Prompt: {item.prompt}
 Required Criteria: {", ".join(item.quality_criteria)}
@@ -141,6 +148,17 @@ Candidate Response:
 {output_text}
 
 Output JSON with keys "score" (float 0.0 to 1.0) and "rationale" (string)."""
+
+        # 1. Budget reservation prior to dispatch
+        reservation_token: str | None = None
+        if self.budget_tracker:
+            if hasattr(self.budget_tracker, "estimate_call_cost"):
+                est_cost = self.budget_tracker.estimate_call_cost(
+                    self.judge_model_id, prompt, max_tokens=256
+                )
+            else:
+                est_cost = 0.001
+            reservation_token = self.budget_tracker.reserve(est_cost)
 
         start = time.perf_counter()
         headers = {
@@ -153,6 +171,7 @@ Output JSON with keys "score" (float 0.0 to 1.0) and "rationale" (string)."""
             "temperature": 0.0,
         }
 
+        actual_cost = 0.0005
         try:
             with httpx.Client(timeout=30.0) as client:
                 res = client.post(
@@ -172,9 +191,39 @@ Output JSON with keys "score" (float 0.0 to 1.0) and "rationale" (string)."""
                 parsed = json.loads(cleaned.strip())
                 score = float(parsed.get("score", 0.7))
                 rationale = str(parsed.get("rationale", "Judge evaluation"))
+
+                # Reconcile actual calculated or reported cost
+                usage = data.get("usage", {})
+                if isinstance(usage, dict) and usage.get("cost") is not None:
+                    with contextlib.suppress(ValueError, TypeError):
+                        actual_cost = float(usage["cost"])
+                elif self.pricing_table or getattr(self.budget_tracker, "pricing_table", None):
+                    pt = self.pricing_table or getattr(self.budget_tracker, "pricing_table", None)
+                    p_tok = int(usage.get("prompt_tokens", 0)) if isinstance(usage, dict) else 0
+                    c_tok = int(usage.get("completion_tokens", 0)) if isinstance(usage, dict) else 0
+                    actual_cost = pt.calculate_cost(self.judge_model_id, p_tok, c_tok)
+                else:
+                    p_tok = int(usage.get("prompt_tokens", 0)) if isinstance(usage, dict) else 0
+                    c_tok = int(usage.get("completion_tokens", 0)) if isinstance(usage, dict) else 0
+                    if p_tok > 0 or c_tok > 0:
+                        actual_cost = round(
+                            (p_tok * 0.15 / 1_000_000.0) + (c_tok * 0.60 / 1_000_000.0), 6
+                        )
+
+                if self.budget_tracker and reservation_token:
+                    self.budget_tracker.reconcile(reservation_token, actual_cost)
+                    reservation_token = None
+
+        except BudgetExceededError:
+            if self.budget_tracker and reservation_token:
+                self.budget_tracker.release(reservation_token)
+            raise
         except Exception as e:
+            if self.budget_tracker and reservation_token:
+                self.budget_tracker.release(reservation_token)
             score = 0.5
             rationale = f"Judge evaluation fallback error: {str(e)[:100]}"
+            actual_cost = 0.0
 
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         return JudgeEvaluationResult(
@@ -183,5 +232,5 @@ Output JSON with keys "score" (float 0.0 to 1.0) and "rationale" (string)."""
             rationale=rationale,
             judge_model_id=self.judge_model_id,
             judge_latency_ms=round(elapsed_ms, 2),
-            judge_cost_usd=0.0005,  # Estimated mini judge call cost
+            judge_cost_usd=round(actual_cost, 6),
         )

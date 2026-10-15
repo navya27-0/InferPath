@@ -20,6 +20,7 @@ from inferpath.models.domain import (
 from inferpath.models.enums import PrivacyClass, ProvenanceLabel, RouteTier
 from inferpath.models.telemetry import ProvenanceValue
 from inferpath.router import BaseRouter, RuleBasedRouter
+from inferpath.router.analyzer import contains_sensitive_patterns
 from inferpath.router.strategies import ConstraintsUnsatisfiableError
 from inferpath.security.budget import RunBudgetTracker
 from inferpath.security.hashing import hash_prompt
@@ -1064,7 +1065,9 @@ class RequestPipeline:
             "rule_id": result.rule_id,
             "privacy_class": result.privacy_class.value,
         }
-        if request.privacy_class == PrivacyClass.PUBLIC:
+        if request.privacy_class == PrivacyClass.PUBLIC and not contains_sensitive_patterns(
+            request.prompt
+        ):
             meta["prompt_sample"] = request.prompt[:120]
 
         record = {

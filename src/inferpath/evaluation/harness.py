@@ -55,6 +55,8 @@ class SystemExecutionSummary(BaseModel):
     avg_quality_score: float
     total_cost_usd_calculated: float
     avg_cost_usd_calculated: float
+    total_judge_cost_usd: float = 0.0
+    total_evaluation_cost_usd: float = 0.0
     avg_latency_ms: float
     p50_latency_ms: float
     p95_latency_ms: float
@@ -106,6 +108,12 @@ class ExperimentHarness:
         self.judge = judge or MockJudge()
         self.is_real_judge = judge is not None and not isinstance(judge, MockJudge)
         self.budget_tracker = budget_tracker
+        if (
+            self.budget_tracker
+            and hasattr(self.judge, "budget_tracker")
+            and getattr(self.judge, "budget_tracker", None) is None
+        ):
+            self.judge.budget_tracker = self.budget_tracker
         self.include_raw_prompts = include_raw_prompts
 
         # Strict directory separation between simulated and real experiments
@@ -294,6 +302,7 @@ class ExperimentHarness:
         route_dist: dict[str, int] = {}
         latencies: list[float] = []
         costs: list[float] = []
+        judge_costs: list[float] = []
         qualities: list[float] = []
         passed_q_count = 0
         fallback_count = 0
@@ -520,6 +529,7 @@ class ExperimentHarness:
             route_dist[tier_name] = route_dist.get(tier_name, 0) + 1
             latencies.append(res.total_latency_ms.value)
             costs.append(res.cost_usd.value)
+            judge_costs.append(judge_res.judge_cost_usd)
             qualities.append(final_quality)
 
             # Environmental estimate
@@ -580,6 +590,7 @@ class ExperimentHarness:
                     "validation_passed": res.validation_passed,
                     "fallback_occurred": res.fallback_occurred,
                     "cost_usd_calculated": res.cost_usd.value,
+                    "judge_cost_usd": judge_res.judge_cost_usd,
                     "latency_ms": res.total_latency_ms.value,
                     "quality_score": round(final_quality, 4),
                     "meets_q_min": meets_q,
@@ -602,6 +613,10 @@ class ExperimentHarness:
         p50 = float(np.percentile(latencies, 50)) if n_items else 0.0
         p95 = float(np.percentile(latencies, 95)) if n_items else 0.0
 
+        total_gen_cost = round(sum(costs), 6)
+        total_j_cost = round(sum(judge_costs), 6)
+        total_ev_cost = round(total_gen_cost + total_j_cost, 6)
+
         summary = SystemExecutionSummary(
             system_id=system_id,
             run_id=run_id,
@@ -611,8 +626,10 @@ class ExperimentHarness:
             total_items=n_items,
             quality_pass_rate=round(passed_q_count / n_items, 4) if n_items else 0.0,
             avg_quality_score=round(sum(qualities) / n_items, 4) if n_items else 0.0,
-            total_cost_usd_calculated=round(sum(costs), 6),
-            avg_cost_usd_calculated=round(sum(costs) / n_items, 6) if n_items else 0.0,
+            total_cost_usd_calculated=total_gen_cost,
+            avg_cost_usd_calculated=round(total_gen_cost / n_items, 6) if n_items else 0.0,
+            total_judge_cost_usd=total_j_cost,
+            total_evaluation_cost_usd=total_ev_cost,
             avg_latency_ms=round(sum(latencies) / n_items, 2) if n_items else 0.0,
             p50_latency_ms=round(p50, 2),
             p95_latency_ms=round(p95, 2),
