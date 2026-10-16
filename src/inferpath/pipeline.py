@@ -67,11 +67,13 @@ class RequestPipeline:
         estimator: EnvironmentalEstimator | None = None,
         adapter_mode: str | None = None,
         allow_mock_fallback: bool | None = None,
+        adapter_factory: type[AdapterFactory] | AdapterFactory | None = None,
     ):
         self.settings = settings or load_settings()
         self.pricing_table = pricing_table or load_pricing_table()
         self.adapter_mode = adapter_mode
         self.allow_mock_fallback = allow_mock_fallback if allow_mock_fallback is not None else True
+        self.adapter_factory = adapter_factory or AdapterFactory
 
         # Resolve credentials from SecretManager if not present in settings
         if not self.settings.openrouter.api_key:
@@ -110,28 +112,28 @@ class RequestPipeline:
 
     def _build_mock_small(self) -> MockSmallModel:
         """Constructs deterministic MockSmallModel via AdapterFactory."""
-        return AdapterFactory.build_mock_small(self.settings, self.pricing_table)
+        return self.adapter_factory.build_mock_small(self.settings, self.pricing_table)
 
     def _build_openrouter_small(self) -> OpenRouterAdapter:
         """Constructs live OpenRouterAdapter via AdapterFactory."""
-        return AdapterFactory.build_openrouter_small(
+        return self.adapter_factory.build_openrouter_small(
             self.settings, self.pricing_table, self.budget_tracker
         )
 
     def _build_mock_large(self) -> MockLargeModel:
         """Constructs deterministic MockLargeModel via AdapterFactory."""
-        return AdapterFactory.build_mock_large(self.settings, self.pricing_table)
+        return self.adapter_factory.build_mock_large(self.settings, self.pricing_table)
 
     def _build_openrouter_large(self) -> OpenRouterAdapter:
         """Constructs live OpenRouterAdapter via AdapterFactory."""
-        return AdapterFactory.build_openrouter_large(
+        return self.adapter_factory.build_openrouter_large(
             self.settings, self.pricing_table, self.budget_tracker
         )
 
     def _create_small_adapter(self) -> ModelAdapter:
         """Creates small model adapter explicitly based on mode, credentials, and fallback policy."""
         try:
-            return AdapterFactory.create_small_adapter(
+            return self.adapter_factory.create_small_adapter(
                 settings=self.settings,
                 pricing_table=self.pricing_table,
                 budget_tracker=self.budget_tracker,
@@ -144,7 +146,7 @@ class RequestPipeline:
     def _create_large_adapter(self) -> ModelAdapter:
         """Creates large model adapter explicitly based on mode, credentials, and fallback policy."""
         try:
-            return AdapterFactory.create_large_adapter(
+            return self.adapter_factory.create_large_adapter(
                 settings=self.settings,
                 pricing_table=self.pricing_table,
                 budget_tracker=self.budget_tracker,

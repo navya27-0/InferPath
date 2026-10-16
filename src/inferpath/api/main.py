@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from inferpath import __version__
 from inferpath.config.deployment_profiles import DeploymentProfileConfig, get_deployment_profile
+from inferpath.handlers.factory import AdapterFactory
 from inferpath.models.domain import TaskParameters, UserRequest
 from inferpath.models.enums import PrivacyClass
 from inferpath.pipeline import PipelineExecutionError, RequestPipeline
@@ -86,6 +87,7 @@ def create_app(
     deployment_mode: str | None = None,
     deployment_profile: DeploymentProfileConfig | str | None = None,
     trusted_proxies: set[str] | None = None,
+    adapter_factory: type[AdapterFactory] | AdapterFactory | None = None,
 ) -> FastAPI:
     """Application factory supporting pipeline, rate limiting, and auth injection."""
     app = FastAPI(
@@ -117,6 +119,7 @@ def create_app(
         pipeline_instance = RequestPipeline(
             adapter_mode=active_profile.adapter_mode,
             allow_mock_fallback=active_profile.allow_mock_fallback,
+            adapter_factory=adapter_factory,
         )
 
     # Store profile on app state for operational inspection

@@ -377,3 +377,30 @@ def test_create_app_with_distributed_rate_limiter():
     res2 = client.post("/v1/respond", json={"prompt": "125 * 8"})
     assert res2.status_code == 429
     assert res2.json()["code"] == "RATE_LIMIT_EXCEEDED"
+
+
+def test_pipeline_and_api_adapter_factory_injection():
+    """Verify adapter_factory can be injected into RequestPipeline and create_app."""
+    from unittest.mock import MagicMock
+
+    from inferpath import __version__
+    from inferpath.handlers.mock_adapter import MockLargeModel, MockSmallModel
+    from inferpath.pipeline import RequestPipeline
+
+    custom_factory = MagicMock()
+    custom_factory.create_small_adapter.return_value = MockSmallModel(model_id="mock-custom-s")
+    custom_factory.create_large_adapter.return_value = MockLargeModel(model_id="mock-custom-l")
+
+    # Injected into RequestPipeline
+    pipeline = RequestPipeline(adapter_factory=custom_factory)
+    assert pipeline.adapter_factory == custom_factory
+    assert custom_factory.create_small_adapter.called
+    assert custom_factory.create_large_adapter.called
+
+    # Injected into create_app
+    app = create_app(deployment_mode="local-demo", adapter_factory=custom_factory)
+    client = TestClient(app)
+    health = client.get("/v1/health")
+    assert health.status_code == 200
+    assert health.json()["version"] == __version__
+    assert health.json()["version"] == "0.2.0"
