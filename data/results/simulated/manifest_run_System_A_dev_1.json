@@ -7,9 +7,9 @@
   "dataset_version": "1.0.0",
   "dataset_sha256": "da6ecc436e0f57d1c0db02a431e2b04c008c672a43ebd94ab416ac9d7c1a207d",
   "config_hash": "83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3",
-  "git_commit": "bd7d04d24d7035e3f87a48da35bed87c4985b3a8-dirty",
-  "git_tree_clean": false,
-  "timestamp": "2026-10-16T11:53:13.132375+00:00",
+  "git_commit": "1c91128a0a4ad89c8c87cb371afcd87127d5e1de",
+  "git_tree_clean": true,
+  "timestamp": "2026-10-16T12:56:06.121528+00:00",
   "random_seed": 52,
   "q_min": 0.7,
   "price_table_date": "2026-10-01",
@@ -46,6 +46,9 @@
     "route_distribution": {
       "large_model_d": 132,
       "deterministic_a": 28
-    }
+    },
+    "mock_coverage_rate": 0.9313,
+    "unrecognized_mock_prompt_count": 11,
+    "validation_failure_count": 28
   }
 }

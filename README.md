@@ -161,23 +161,23 @@ The evaluation results below reflect the recorded artifacts in `data/results/`.
 > **Simulated Workload & Reproducibility Notice**: Results are evaluated under reproducible offline simulated workloads using deterministic mock adapters. The `± 0.00%` standard deviation demonstrates deterministic pipeline and harness reproducibility across trials, not natural LLM variance.
 
 > [!IMPORTANT]
-> **Research Trade-Off Analysis**: Rather than asserting uncompromised quality parity, InferPath explores the multi-tier cost-latency-quality trade-off space. Under this benchmark workload, full InferPath (System C) achieves an **84.9% cost reduction** and **42.9% latency reduction** relative to the Always-Large baseline (System A), with a measured quality pass rate decrease from 69.4% to 63.1% ($\Delta Q = -6.3\%$).
+> **Research Trade-Off Analysis**: Rather than asserting uncompromised quality parity, InferPath explores the multi-tier cost-latency-quality trade-off space. Under this benchmark workload, full InferPath (System C) achieves an **84.9% cost reduction** and **70.2% latency reduction** (from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup) relative to the Always-Large baseline (System A), with a measured quality pass rate decrease from 69.4% to 63.1% ($\Delta Q = -6.3\%$).
 
 The following empirical metrics were logged during the 3-repeat offline benchmark across 160 items in `data/pilot_dataset.json`:
 
 | System / Baseline | Quality Pass Rate | 95% Bootstrap CI | Cost (USD) | Cost vs A | Latency (ms) | Energy (Wh) | Provenance |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **System_A** | 69.4% ± 0.00% | [56.2%, 80.0%] | $0.02720 | 0.1% | 89.5 ms | 11.811 Wh | `[SIMULATED / CALCULATED]` |
-| **System_Small** | 65.6% ± 0.00% | [53.8%, 75.6%] | $0.00040 | 98.5% | 26.6 ms | 0.626 Wh | `[SIMULATED / CALCULATED]` |
+| **System_Small** | 65.6% ± 0.00% | [53.8%, 75.6%] | $0.00040 | 98.5% | 29.1 ms | 0.626 Wh | `[SIMULATED / CALCULATED]` |
 | **System_B** | 69.4% ± 0.00% | [56.2%, 80.0%] | $0.02000 | 26.5% | 67.2 ms | 8.583 Wh | `[SIMULATED / CALCULATED]` |
-| **System_C** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00410 | 84.9% | 26.7 ms | 1.862 Wh | `[SIMULATED / CALCULATED]` |
-| **System_Learned** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00430 | 84.2% | 62.3 ms | 2.369 Wh | `[SIMULATED / CALCULATED]` |
-| **System_Oracle** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00040 | 98.5% | 28.6 ms | 0.572 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_templates** | 66.2% ± 0.00% | [54.4%, 76.2%] | $0.00410 | 84.9% | 33.1 ms | 1.903 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_small_model** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.01840 | 32.4% | 29.2 ms | 8.011 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_fallback** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00290 | 89.3% | 32.6 ms | 1.424 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_cache** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00410 | 84.9% | 30.2 ms | 1.862 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_validation** | 66.2% ± 0.00% | [53.8%, 76.9%] | $0.00290 | 89.3% | 24.8 ms | 1.424 Wh | `[SIMULATED / CALCULATED]` |
+| **System_C** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00410 | 84.9% | 25.8 ms | 1.862 Wh | `[SIMULATED / CALCULATED]` |
+| **System_Learned** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00430 | 84.2% | 41.4 ms | 2.369 Wh | `[SIMULATED / CALCULATED]` |
+| **System_Oracle** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00040 | 98.5% | 26.1 ms | 0.572 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_templates** | 66.2% ± 0.00% | [54.4%, 76.2%] | $0.00410 | 84.9% | 26.4 ms | 1.903 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_small_model** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.01840 | 32.4% | 29.3 ms | 8.011 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_fallback** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00290 | 89.3% | 29.2 ms | 1.424 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_cache** | 63.1% ± 0.00% | [51.2%, 73.8%] | $0.00410 | 84.9% | 29.0 ms | 1.862 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_validation** | 66.2% ± 0.00% | [53.8%, 76.9%] | $0.00290 | 89.3% | 30.7 ms | 1.424 Wh | `[SIMULATED / CALCULATED]` |
 
 #### Per-Task-Family Performance Breakdown (`dev` split)
 
@@ -196,28 +196,29 @@ The following empirical metrics were logged during the 3-repeat offline benchmar
 - **Summary Artifact**: [`data/results/simulated/benchmark_summary.json`](data/results/simulated/benchmark_summary.json)  
 - **Protocol Config Hash**: `83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3`  
 
-- **Inter-Rater Agreement**: Human-Human Quadratic $\kappa = 0.859$ `[MEASURED]`, Human-Judge $\kappa = 0.415$ `[MEASURED]` (dual-annotator study, 5-point rubric)  
+- **Inter-Rater Agreement**: A pilot dual-annotator study achieved strong agreement (Human-Human Quadratic $\kappa = 0.859$ `[MEASURED]`), while automated-judge agreement was moderate (Human-Judge $\kappa = 0.415$ `[MEASURED]`), indicating automated judge scores serve as an auxiliary metric rather than ground truth.  
 
 - **Bootstrap Estimator**: Clustered task-family bootstrap (B=1000 resamples, 95% CI)  
 - **Exact Cache Performance**: Cold Hit Rate = `16.2%`, Warm Hit Rate = `66.2%`, Inappropriate Hits = `0`
 
 ### Held-Out Evaluation Benchmark (`test` split, 3 repeats)
 
-Evaluation on the held-out 160-item `test` split (strictly isolated task families, zero prompt leakage from `dev`):
+> [!WARNING]
+> **Mock-Coverage & Distribution Diagnostics (`test` split)**: Held-out simulated evaluation exposed substantial distribution and mock-coverage failure (mock adapter coverage rate: `19.4%`, with `129` unrecognized mock completions defaulting to generic fallbacks). Consequently, the test-split simulated pass rates (System A: 2.5%, System C: 9.4%) reflect mock adapter keyword omission rather than generalized LLM routing capability. This evaluation is retained for diagnostic provenance, not as evidence of model generalization.
 
 | System / Baseline | Quality Pass Rate | 95% Bootstrap CI | Cost (USD) | Cost vs A | Latency (ms) | Energy (Wh) | Provenance |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **System_A** | 2.5% ± 0.00% | [0.0%, 6.9%] | $0.02130 | 0.2% | 96.2 ms | 10.750 Wh | `[SIMULATED / CALCULATED]` |
-| **System_Small** | 2.5% ± 0.00% | [0.0%, 6.9%] | $0.00030 | 98.6% | 25.9 ms | 0.571 Wh | `[SIMULATED / CALCULATED]` |
+| **System_Small** | 2.5% ± 0.00% | [0.0%, 6.9%] | $0.00030 | 98.6% | 26.9 ms | 0.571 Wh | `[SIMULATED / CALCULATED]` |
 | **System_B** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.01540 | 27.9% | 71.1 ms | 7.636 Wh | `[SIMULATED / CALCULATED]` |
-| **System_C** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00300 | 85.9% | 27.1 ms | 1.769 Wh | `[SIMULATED / CALCULATED]` |
-| **System_Learned** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00340 | 84.1% | 43.5 ms | 2.125 Wh | `[SIMULATED / CALCULATED]` |
-| **System_Oracle** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00030 | 98.6% | 23.5 ms | 0.536 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_templates** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00300 | 85.9% | 24.0 ms | 1.779 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_small_model** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.01520 | 28.8% | 30.0 ms | 7.502 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_fallback** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00150 | 93.0% | 31.5 ms | 1.116 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_cache** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00300 | 85.9% | 32.7 ms | 1.769 Wh | `[SIMULATED / CALCULATED]` |
-| **ablation_no_validation** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00150 | 93.0% | 35.2 ms | 1.116 Wh | `[SIMULATED / CALCULATED]` |
+| **System_C** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00300 | 85.9% | 29.1 ms | 1.769 Wh | `[SIMULATED / CALCULATED]` |
+| **System_Learned** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00340 | 84.1% | 77.2 ms | 2.125 Wh | `[SIMULATED / CALCULATED]` |
+| **System_Oracle** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00030 | 98.6% | 29.5 ms | 0.536 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_templates** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00300 | 85.9% | 33.0 ms | 1.779 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_small_model** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.01520 | 28.8% | 22.4 ms | 7.502 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_fallback** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00150 | 93.0% | 25.0 ms | 1.116 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_cache** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00300 | 85.9% | 24.6 ms | 1.769 Wh | `[SIMULATED / CALCULATED]` |
+| **ablation_no_validation** | 9.4% ± 0.00% | [2.5%, 17.5%] | $0.00150 | 93.0% | 27.4 ms | 1.116 Wh | `[SIMULATED / CALCULATED]` |
 
 - **Test Summary Artifact**: [`data/results/simulated_test/benchmark_summary.json`](data/results/simulated_test/benchmark_summary.json)  
 

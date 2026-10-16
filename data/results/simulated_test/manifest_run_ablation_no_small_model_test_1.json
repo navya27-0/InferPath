@@ -7,9 +7,9 @@
   "dataset_version": "1.0.0",
   "dataset_sha256": "da6ecc436e0f57d1c0db02a431e2b04c008c672a43ebd94ab416ac9d7c1a207d",
   "config_hash": "83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3",
-  "git_commit": "bd7d04d24d7035e3f87a48da35bed87c4985b3a8-dirty",
-  "git_tree_clean": false,
-  "timestamp": "2026-10-16T12:00:26.756199+00:00",
+  "git_commit": "1c91128a0a4ad89c8c87cb371afcd87127d5e1de",
+  "git_tree_clean": true,
+  "timestamp": "2026-10-16T13:03:05.553755+00:00",
   "random_seed": 52,
   "q_min": 0.7,
   "price_table_date": "2026-10-01",
@@ -33,9 +33,9 @@
     "avg_cost_usd_calculated": 9.5e-05,
     "total_judge_cost_usd": 0.0,
     "total_evaluation_cost_usd": 0.015153,
-    "avg_latency_ms": 22.67,
-    "p50_latency_ms": 27.66,
-    "p95_latency_ms": 39.83,
+    "avg_latency_ms": 22.62,
+    "p50_latency_ms": 27.22,
+    "p95_latency_ms": 38.38,
     "cache_hit_rate": 0.1812,
     "fallback_rate": 0.0,
     "total_energy_wh": 7.5021,
@@ -47,6 +47,9 @@
       "deterministic_a": 15,
       "large_model_d": 142,
       "template_b": 3
-    }
+    },
+    "mock_coverage_rate": 0.1937,
+    "unrecognized_mock_prompt_count": 129,
+    "validation_failure_count": 20
   }
 }
