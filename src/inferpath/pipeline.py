@@ -131,12 +131,8 @@ class RequestPipeline:
             budget_tracker=self.budget_tracker,
         )
 
-    def execute(self, request: UserRequest) -> PipelineResult:
-        """Executes the request through the complete 11-step pipeline."""
-        start_time = time.perf_counter()
-        route_trace: list[dict[str, Any]] = []
-
-        # Step 1: Validate request schema
+    def _validate_request(self, request: UserRequest, route_trace: list[dict[str, Any]]) -> str:
+        """Step 1 & 2: Validates schema and privacy transmission feasibility."""
         if not request.prompt or not request.prompt.strip():
             raise PipelineExecutionError("Request prompt cannot be empty.")
         prompt_digest = hash_prompt(request.prompt)
@@ -144,15 +140,13 @@ class RequestPipeline:
             {"step": "validation_schema", "status": "passed", "prompt_hash": prompt_digest}
         )
 
-        # Step 2: Enforce privacy policy
         if request.privacy_class in (
             PrivacyClass.INTERNAL,
             PrivacyClass.CONFIDENTIAL_PRIVATE,
         ):
-            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+            can_transmit, _ = self.privacy_enforcer.can_transmit_externally(
                 request, RouteTier.SMALL_MODEL_C
             )
-            # Will be verified again during routing if model tier is selected
             route_trace.append(
                 {
                     "step": "privacy_check",
@@ -160,8 +154,12 @@ class RequestPipeline:
                     "allow_external": can_transmit,
                 }
             )
+        return prompt_digest
 
-        # Step 3 & 4: Analyze and Route
+    def _route_and_check_constraints(
+        self, request: UserRequest, route_trace: list[dict[str, Any]]
+    ) -> RoutingDecision:
+        """Step 3 & 4: Selects optimal route and verifies caller/system constraint satisfiability."""
         decision: RoutingDecision = self.router.route(request)
         route_trace.append(
             {
@@ -236,7 +234,12 @@ class RequestPipeline:
                     eligible_tiers=[],
                 )
 
-        # Step 5: Canonical cache key and eligibility
+        return decision
+
+    def _prepare_cache_key_and_eligibility(
+        self, request: UserRequest, decision: RoutingDecision, route_trace: list[dict[str, Any]]
+    ) -> tuple[str, bool]:
+        """Step 5: Builds canonical cache key and evaluates eligibility policy."""
         handler_version = self._get_handler_version(decision)
         template_version = "1.0.0" if decision.selected_tier == RouteTier.TEMPLATE_B else None
         cache_key = CanonicalKeyBuilder.build_key(
@@ -257,183 +260,92 @@ class RequestPipeline:
                 "reason": elig_reason,
             }
         )
+        return cache_key, is_cache_eligible
 
-        # Step 6: Exact-cache lookup
-        if is_cache_eligible and self.privacy_enforcer.is_cache_permitted(request):
-            cached_output = self.cache.get(cache_key)
-            if cached_output:
-                route_trace.append({"step": "cache_lookup", "status": "hit"})
-                elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-                return self._finalize_result(
-                    request=request,
-                    decision=decision,
-                    output=cached_output,
-                    was_cached=True,
-                    fallback_occurred=False,
-                    fallback_history=[],
-                    validation_passed=True,
-                    elapsed_ms=elapsed_ms,
-                    route_trace=route_trace,
-                )
-            route_trace.append({"step": "cache_lookup", "status": "miss"})
-        else:
-            route_trace.append({"step": "cache_lookup", "status": "bypassed"})
+    def _can_attempt_fallback(
+        self,
+        request: UserRequest,
+        decision: RoutingDecision,
+        current_tier: RouteTier,
+        val_result: Any,
+        route_trace: list[dict[str, Any]],
+    ) -> bool:
+        """Step 9: Checks whether fallback escalation from Tier C to Tier D is authorized."""
+        if (
+            val_result.is_valid
+            or not self.settings.routing.enable_fallback
+            or current_tier != RouteTier.SMALL_MODEL_C
+        ):
+            return False
 
-        # Step 7: Execute on cache miss
-        current_tier = decision.selected_tier
-        output = self._execute_tier(request, decision, current_tier)
-        route_trace.append(
-            {
-                "step": "handler_execution",
-                "tier": current_tier.value,
-                "latency_ms": output.latency_ms.value,
-            }
-        )
-
-        # If template required clarification, return immediately without caching
-        if output.needs_clarification:
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            route_trace.append(
-                {"step": "clarification_required", "missing": decision.missing_fields}
+        # Privacy check for fallback
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            can_tx, _ = self.privacy_enforcer.can_transmit_externally(
+                request, RouteTier.LARGE_MODEL_D
             )
-            return self._finalize_result(
-                request=request,
-                decision=decision,
-                output=output,
-                was_cached=False,
-                fallback_occurred=False,
-                fallback_history=[],
-                validation_passed=False,
-                elapsed_ms=elapsed_ms,
-                route_trace=route_trace,
+            if not can_tx:
+                route_trace.append({"step": "fallback_blocked", "reason": "privacy_policy"})
+                return False
+
+        # Budget check for fallback
+        if self.budget_tracker:
+            est_d_cost = self.budget_tracker.estimate_call_cost(
+                self.large_adapter.model_id,
+                request.prompt,
+                request.task_parameters.max_tokens,
             )
+            if est_d_cost > self.budget_tracker.remaining_budget:
+                route_trace.append({"step": "fallback_blocked", "reason": "budget_exhaustion"})
+                return False
 
-        # Step 8: Deterministic output validation
-        val_result = self.validator.validate(output.output_text, request, current_tier=current_tier)
-        route_trace.append(
-            {
-                "step": "output_validation",
-                "is_valid": val_result.is_valid,
-                "failure_code": val_result.failure_code,
-                "rejection_reason": val_result.rejection_reason,
-            }
-        )
-
-        # Step 9: Bounded Fallback (Depth max 1)
-        fallback_occurred = False
-        fallback_history: list[FallbackRecord] = []
+        # Caller constraints and eligibility check for fallback
+        if decision.eligible_tiers and RouteTier.LARGE_MODEL_D not in decision.eligible_tiers:
+            route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
+            return False
 
         if (
-            not val_result.is_valid
-            and self.settings.routing.enable_fallback
-            and current_tier == RouteTier.SMALL_MODEL_C
+            request.task_parameters.minimum_quality is not None
+            and request.task_parameters.minimum_quality > 0.96
         ):
-            can_fallback = True
+            route_trace.append({"step": "fallback_blocked", "reason": "user_quality_constraint"})
+            return False
 
-            # Privacy check for fallback
-            if request.privacy_class in (
-                PrivacyClass.INTERNAL,
-                PrivacyClass.CONFIDENTIAL_PRIVATE,
-            ):
-                can_tx, _ = self.privacy_enforcer.can_transmit_externally(
-                    request, RouteTier.LARGE_MODEL_D
-                )
-                if not can_tx:
-                    can_fallback = False
-                    route_trace.append({"step": "fallback_blocked", "reason": "privacy_policy"})
-
-            # Budget check for fallback
-            if can_fallback and self.budget_tracker:
-                est_d_cost = self.budget_tracker.estimate_call_cost(
+        if request.task_parameters.maximum_cost_usd is not None:
+            est_cost = (
+                self.budget_tracker.estimate_call_cost(
                     self.large_adapter.model_id,
                     request.prompt,
                     request.task_parameters.max_tokens,
                 )
-                if est_d_cost > self.budget_tracker.remaining_budget:
-                    can_fallback = False
-                    route_trace.append({"step": "fallback_blocked", "reason": "budget_exhaustion"})
+                if self.budget_tracker
+                else 0.005
+            )
+            if est_cost > request.task_parameters.maximum_cost_usd:
+                route_trace.append({"step": "fallback_blocked", "reason": "user_budget_constraint"})
+                return False
 
-            # Caller constraints and eligibility check for fallback
-            if can_fallback:
-                if (
-                    decision.eligible_tiers
-                    and RouteTier.LARGE_MODEL_D not in decision.eligible_tiers
-                ):
-                    can_fallback = False
-                    route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
+        if (
+            request.task_parameters.maximum_latency_ms is not None
+            and request.task_parameters.maximum_latency_ms < 250.0
+        ):
+            route_trace.append({"step": "fallback_blocked", "reason": "user_latency_constraint"})
+            return False
 
-                # Check caller quality constraint against Tier D capability
-                if (
-                    can_fallback
-                    and request.task_parameters.minimum_quality is not None
-                    and request.task_parameters.minimum_quality > 0.96
-                ):
-                    can_fallback = False
-                    route_trace.append(
-                        {"step": "fallback_blocked", "reason": "user_quality_constraint"}
-                    )
+        return True
 
-                # Check caller budget constraint against Tier D cost estimate
-                if can_fallback and request.task_parameters.maximum_cost_usd is not None:
-                    est_cost = (
-                        self.budget_tracker.estimate_call_cost(
-                            self.large_adapter.model_id,
-                            request.prompt,
-                            request.task_parameters.max_tokens,
-                        )
-                        if self.budget_tracker
-                        else 0.005
-                    )
-                    if est_cost > request.task_parameters.maximum_cost_usd:
-                        can_fallback = False
-                        route_trace.append(
-                            {"step": "fallback_blocked", "reason": "user_budget_constraint"}
-                        )
-
-                # Check caller latency constraint against Tier D expected latency
-                if can_fallback and (
-                    request.task_parameters.maximum_latency_ms is not None
-                    and request.task_parameters.maximum_latency_ms < 250.0
-                ):
-                    can_fallback = False
-                    route_trace.append(
-                        {"step": "fallback_blocked", "reason": "user_latency_constraint"}
-                    )
-
-            if can_fallback:
-                fb_rec = FallbackRecord(
-                    from_tier=RouteTier.SMALL_MODEL_C,
-                    to_tier=RouteTier.LARGE_MODEL_D,
-                    rejection_reason=val_result.rejection_reason
-                    or "Validation failed on small model.",
-                )
-                fallback_history.append(fb_rec)
-                fallback_occurred = True
-                current_tier = RouteTier.LARGE_MODEL_D
-
-                # Execute large model
-                output = self._execute_tier(request, decision, RouteTier.LARGE_MODEL_D)
-                route_trace.append(
-                    {
-                        "step": "fallback_execution",
-                        "to_tier": RouteTier.LARGE_MODEL_D.value,
-                        "latency_ms": output.latency_ms.value,
-                    }
-                )
-
-                # Re-validate large model output
-                val_result = self.validator.validate(
-                    output.output_text, request, current_tier=RouteTier.LARGE_MODEL_D
-                )
-                route_trace.append(
-                    {
-                        "step": "fallback_validation",
-                        "is_valid": val_result.is_valid,
-                        "failure_code": val_result.failure_code,
-                    }
-                )
-
-        # Step 10: Cache validated eligible result
+    def _store_cache_if_eligible(
+        self,
+        cache_key: str,
+        request: UserRequest,
+        current_tier: RouteTier,
+        output: HandlerOutput,
+        val_result: Any,
+        route_trace: list[dict[str, Any]],
+    ) -> None:
+        """Step 10: Writes validated eligible outputs to the exact cache synchronously."""
         store_elig = self.eligibility_policy.check_storage_eligibility(
             request=request, route=current_tier, output=output, validation_result=val_result
         )
@@ -459,328 +371,16 @@ class RequestPipeline:
                 {"step": "cache_write", "status": "bypassed", "reason": store_elig.bypass_reason}
             )
 
-        # Step 11: Finalize outcome and log telemetry
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-        return self._finalize_result(
-            request=request,
-            decision=decision,
-            output=output,
-            was_cached=False,
-            fallback_occurred=fallback_occurred,
-            fallback_history=fallback_history,
-            validation_passed=val_result.is_valid,
-            elapsed_ms=elapsed_ms,
-            route_trace=route_trace,
-        )
-
-    async def execute_async(self, request: UserRequest) -> PipelineResult:
-        """Executes the request through the complete 11-step pipeline asynchronously."""
-        start_time = time.perf_counter()
-        route_trace: list[dict[str, Any]] = []
-
-        # Step 1: Validate request schema
-        if not request.prompt or not request.prompt.strip():
-            raise PipelineExecutionError("Request prompt cannot be empty.")
-        prompt_digest = hash_prompt(request.prompt)
-        route_trace.append(
-            {"step": "validation_schema", "status": "passed", "prompt_hash": prompt_digest}
-        )
-
-        # Step 2: Enforce privacy policy
-        if request.privacy_class in (
-            PrivacyClass.INTERNAL,
-            PrivacyClass.CONFIDENTIAL_PRIVATE,
-        ):
-            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
-                request, RouteTier.SMALL_MODEL_C
-            )
-            # Will be verified again during routing if model tier is selected
-            route_trace.append(
-                {
-                    "step": "privacy_check",
-                    "privacy_class": request.privacy_class.value,
-                    "allow_external": can_transmit,
-                }
-            )
-
-        # Step 3 & 4: Analyze and Route
-        decision: RoutingDecision = self.router.route(request)
-        route_trace.append(
-            {
-                "step": "route_selection",
-                "tier": decision.selected_tier.value,
-                "rule_id": decision.rule_id,
-                "reason": decision.reason,
-                "confidence": decision.confidence,
-            }
-        )
-
-        # Enforce privacy check on selected route
-        can_tx, tx_reason = self.privacy_enforcer.can_transmit_externally(
-            request, decision.selected_tier
-        )
-        if not can_tx or decision.rule_id == "R01":
-            raise PrivacyViolationError(
-                tx_reason or decision.reason,
-                privacy_class=request.privacy_class.value,
-                target_tier=decision.selected_tier.value,
-            )
-
-        # Enforce constraint satisfaction check before dispatch
-        if decision.rule_id == "CONSTRAINTS_UNSATISFIABLE" or not decision.constraints_satisfied:
-            route_trace.append(
-                {
-                    "step": "constraint_check",
-                    "status": "unsatisfiable",
-                    "eligible_tiers": [t.value for t in decision.eligible_tiers],
-                    "unsatisfied_constraints": decision.unsatisfied_constraints,
-                    "reason": decision.reason,
-                }
-            )
-            raise ConstraintsUnsatisfiableError(
-                message=decision.reason,
-                unsatisfied_constraints=decision.unsatisfied_constraints,
-                eligible_tiers=decision.eligible_tiers,
-            )
-
-        # In addition, check caller constraints if model tier is selected
-        q_min = request.task_parameters.minimum_quality if request.task_parameters else None
-        b_max = request.task_parameters.maximum_cost_usd if request.task_parameters else None
-        l_max = request.task_parameters.maximum_latency_ms if request.task_parameters else None
-        if decision.selected_tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D):
-            unsatisfied = []
-            if q_min is not None and q_min > 0.96:
-                unsatisfied.append("quality")
-            if b_max is not None and b_max < 0.00001:
-                unsatisfied.append("budget")
-            if l_max is not None and l_max < 20.0:
-                unsatisfied.append("latency")
-            if unsatisfied:
-                b_str = f"${b_max:.6f}" if b_max is not None else "None"
-                l_str = f"{l_max:.1f}ms" if l_max is not None else "None"
-                reason = (
-                    f"Constraints unsatisfiable: no candidate tier satisfies all caller constraints "
-                    f"(unsatisfied constraints: {', '.join(unsatisfied)}; "
-                    f"Q_min={q_min}, B_max={b_str}, L_max={l_str})."
-                )
-                route_trace.append(
-                    {
-                        "step": "constraint_check",
-                        "status": "unsatisfiable",
-                        "eligible_tiers": [],
-                        "unsatisfied_constraints": unsatisfied,
-                        "reason": reason,
-                    }
-                )
-                raise ConstraintsUnsatisfiableError(
-                    message=reason,
-                    unsatisfied_constraints=unsatisfied,
-                    eligible_tiers=[],
-                )
-
-        # Step 5: Canonical cache key and eligibility
-        handler_version = self._get_handler_version(decision)
-        template_version = "1.0.0" if decision.selected_tier == RouteTier.TEMPLATE_B else None
-        cache_key = CanonicalKeyBuilder.build_key(
-            normalized_prompt=request.prompt,
-            task_parameters=request.task_parameters,
-            context_hash=request.context_hash,
-            user_scope=request.user_scope,
-            selected_route=decision.selected_tier.value,
-            handler_version=handler_version,
-            template_version=template_version,
-            privacy_class=request.privacy_class.value,
-        )
-        is_cache_eligible, elig_reason = self.eligibility_policy.is_eligible(request, decision)
-        route_trace.append(
-            {
-                "step": "cache_eligibility",
-                "is_eligible": is_cache_eligible,
-                "reason": elig_reason,
-            }
-        )
-
-        # Step 6: Exact-cache lookup
-        if is_cache_eligible and self.privacy_enforcer.is_cache_permitted(request):
-            if hasattr(self.cache, "lookup_async"):
-                cached_output = await self.cache.lookup_async(cache_key)
-            elif hasattr(self.cache, "get_async"):
-                cached_output = await self.cache.get_async(cache_key)
-            else:
-                cached_output = self.cache.get(cache_key)
-            if cached_output:
-                route_trace.append({"step": "cache_lookup", "status": "hit"})
-                elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-                return self._finalize_result(
-                    request=request,
-                    decision=decision,
-                    output=cached_output,
-                    was_cached=True,
-                    fallback_occurred=False,
-                    fallback_history=[],
-                    validation_passed=True,
-                    elapsed_ms=elapsed_ms,
-                    route_trace=route_trace,
-                )
-            route_trace.append({"step": "cache_lookup", "status": "miss"})
-        else:
-            route_trace.append({"step": "cache_lookup", "status": "bypassed"})
-
-        # Step 7: Execute on cache miss
-        current_tier = decision.selected_tier
-        output = await self._execute_tier_async(request, decision, current_tier)
-        route_trace.append(
-            {
-                "step": "handler_execution",
-                "tier": current_tier.value,
-                "latency_ms": output.latency_ms.value,
-            }
-        )
-
-        # If template required clarification, return immediately without caching
-        if output.needs_clarification:
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            route_trace.append(
-                {"step": "clarification_required", "missing": decision.missing_fields}
-            )
-            return self._finalize_result(
-                request=request,
-                decision=decision,
-                output=output,
-                was_cached=False,
-                fallback_occurred=False,
-                fallback_history=[],
-                validation_passed=False,
-                elapsed_ms=elapsed_ms,
-                route_trace=route_trace,
-            )
-
-        # Step 8: Deterministic output validation
-        val_result = self.validator.validate(output.output_text, request, current_tier=current_tier)
-        route_trace.append(
-            {
-                "step": "output_validation",
-                "is_valid": val_result.is_valid,
-                "failure_code": val_result.failure_code,
-                "rejection_reason": val_result.rejection_reason,
-            }
-        )
-
-        # Step 9: Bounded Fallback (Depth max 1)
-        fallback_occurred = False
-        fallback_history: list[FallbackRecord] = []
-
-        if (
-            not val_result.is_valid
-            and self.settings.routing.enable_fallback
-            and current_tier == RouteTier.SMALL_MODEL_C
-        ):
-            can_fallback = True
-
-            # Privacy check for fallback
-            if request.privacy_class in (
-                PrivacyClass.INTERNAL,
-                PrivacyClass.CONFIDENTIAL_PRIVATE,
-            ):
-                can_tx, _ = self.privacy_enforcer.can_transmit_externally(
-                    request, RouteTier.LARGE_MODEL_D
-                )
-                if not can_tx:
-                    can_fallback = False
-                    route_trace.append({"step": "fallback_blocked", "reason": "privacy_policy"})
-
-            # Budget check for fallback
-            if can_fallback and self.budget_tracker:
-                est_d_cost = self.budget_tracker.estimate_call_cost(
-                    self.large_adapter.model_id,
-                    request.prompt,
-                    request.task_parameters.max_tokens,
-                )
-                if est_d_cost > self.budget_tracker.remaining_budget:
-                    can_fallback = False
-                    route_trace.append({"step": "fallback_blocked", "reason": "budget_exhaustion"})
-
-            # Caller constraints and eligibility check for fallback
-            if can_fallback:
-                if (
-                    decision.eligible_tiers
-                    and RouteTier.LARGE_MODEL_D not in decision.eligible_tiers
-                ):
-                    can_fallback = False
-                    route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
-
-                # Check caller quality constraint against Tier D capability
-                if (
-                    can_fallback
-                    and request.task_parameters.minimum_quality is not None
-                    and request.task_parameters.minimum_quality > 0.96
-                ):
-                    can_fallback = False
-                    route_trace.append(
-                        {"step": "fallback_blocked", "reason": "user_quality_constraint"}
-                    )
-
-                # Check caller budget constraint against Tier D cost estimate
-                if can_fallback and request.task_parameters.maximum_cost_usd is not None:
-                    est_cost = (
-                        self.budget_tracker.estimate_call_cost(
-                            self.large_adapter.model_id,
-                            request.prompt,
-                            request.task_parameters.max_tokens,
-                        )
-                        if self.budget_tracker
-                        else 0.005
-                    )
-                    if est_cost > request.task_parameters.maximum_cost_usd:
-                        can_fallback = False
-                        route_trace.append(
-                            {"step": "fallback_blocked", "reason": "user_budget_constraint"}
-                        )
-
-                # Check caller latency constraint against Tier D expected latency
-                if can_fallback and (
-                    request.task_parameters.maximum_latency_ms is not None
-                    and request.task_parameters.maximum_latency_ms < 250.0
-                ):
-                    can_fallback = False
-                    route_trace.append(
-                        {"step": "fallback_blocked", "reason": "user_latency_constraint"}
-                    )
-
-            if can_fallback:
-                fb_rec = FallbackRecord(
-                    from_tier=RouteTier.SMALL_MODEL_C,
-                    to_tier=RouteTier.LARGE_MODEL_D,
-                    rejection_reason=val_result.rejection_reason
-                    or "Validation failed on small model.",
-                )
-                fallback_history.append(fb_rec)
-                fallback_occurred = True
-                current_tier = RouteTier.LARGE_MODEL_D
-
-                # Execute large model asynchronously
-                output = await self._execute_tier_async(request, decision, RouteTier.LARGE_MODEL_D)
-                route_trace.append(
-                    {
-                        "step": "fallback_execution",
-                        "to_tier": RouteTier.LARGE_MODEL_D.value,
-                        "latency_ms": output.latency_ms.value,
-                    }
-                )
-
-                # Re-validate large model output
-                val_result = self.validator.validate(
-                    output.output_text, request, current_tier=RouteTier.LARGE_MODEL_D
-                )
-                route_trace.append(
-                    {
-                        "step": "fallback_validation",
-                        "is_valid": val_result.is_valid,
-                        "failure_code": val_result.failure_code,
-                    }
-                )
-
-        # Step 10: Cache validated eligible result
+    async def _store_cache_if_eligible_async(
+        self,
+        cache_key: str,
+        request: UserRequest,
+        current_tier: RouteTier,
+        output: HandlerOutput,
+        val_result: Any,
+        route_trace: list[dict[str, Any]],
+    ) -> None:
+        """Step 10: Writes validated eligible outputs to the exact cache asynchronously."""
         store_elig = self.eligibility_policy.check_storage_eligibility(
             request=request, route=current_tier, output=output, validation_result=val_result
         )
@@ -823,6 +423,125 @@ class RequestPipeline:
                 {"step": "cache_write", "status": "bypassed", "reason": store_elig.bypass_reason}
             )
 
+    def execute(self, request: UserRequest) -> PipelineResult:
+        """Executes the request through the complete 11-step pipeline."""
+        start_time = time.perf_counter()
+        route_trace: list[dict[str, Any]] = []
+
+        # Step 1 & 2: Schema validation and privacy policy
+        self._validate_request(request, route_trace)
+
+        # Step 3 & 4: Route selection and constraint satisfaction
+        decision = self._route_and_check_constraints(request, route_trace)
+
+        # Step 5: Canonical cache key and eligibility
+        cache_key, is_cache_eligible = self._prepare_cache_key_and_eligibility(
+            request, decision, route_trace
+        )
+
+        # Step 6: Exact-cache lookup
+        if is_cache_eligible and self.privacy_enforcer.is_cache_permitted(request):
+            cached_output = self.cache.get(cache_key)
+            if cached_output:
+                route_trace.append({"step": "cache_lookup", "status": "hit"})
+                elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                return self._finalize_result(
+                    request=request,
+                    decision=decision,
+                    output=cached_output,
+                    was_cached=True,
+                    fallback_occurred=False,
+                    fallback_history=[],
+                    validation_passed=True,
+                    elapsed_ms=elapsed_ms,
+                    route_trace=route_trace,
+                )
+            route_trace.append({"step": "cache_lookup", "status": "miss"})
+        else:
+            route_trace.append({"step": "cache_lookup", "status": "bypassed"})
+
+        # Step 7: Execute on cache miss (synchronous handler invocation)
+        current_tier = decision.selected_tier
+        output = self._execute_tier(request, decision, current_tier)
+        route_trace.append(
+            {
+                "step": "handler_execution",
+                "tier": current_tier.value,
+                "latency_ms": output.latency_ms.value,
+            }
+        )
+
+        if output.needs_clarification:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            route_trace.append(
+                {"step": "clarification_required", "missing": decision.missing_fields}
+            )
+            return self._finalize_result(
+                request=request,
+                decision=decision,
+                output=output,
+                was_cached=False,
+                fallback_occurred=False,
+                fallback_history=[],
+                validation_passed=False,
+                elapsed_ms=elapsed_ms,
+                route_trace=route_trace,
+            )
+
+        # Step 8: Deterministic output validation
+        val_result = self.validator.validate(output.output_text, request, current_tier=current_tier)
+        route_trace.append(
+            {
+                "step": "output_validation",
+                "is_valid": val_result.is_valid,
+                "failure_code": val_result.failure_code,
+                "rejection_reason": val_result.rejection_reason,
+            }
+        )
+
+        # Step 9: Bounded Fallback (Depth max 1)
+        fallback_occurred = False
+        fallback_history: list[FallbackRecord] = []
+        if self._can_attempt_fallback(request, decision, current_tier, val_result, route_trace):
+            fb_rec = FallbackRecord(
+                from_tier=RouteTier.SMALL_MODEL_C,
+                to_tier=RouteTier.LARGE_MODEL_D,
+                rejection_reason=val_result.rejection_reason or "Validation failed on small model.",
+            )
+            fallback_history.append(fb_rec)
+            fallback_occurred = True
+            current_tier = RouteTier.LARGE_MODEL_D
+
+            output = self._execute_tier(request, decision, RouteTier.LARGE_MODEL_D)
+            route_trace.append(
+                {
+                    "step": "fallback_execution",
+                    "to_tier": RouteTier.LARGE_MODEL_D.value,
+                    "latency_ms": output.latency_ms.value,
+                }
+            )
+
+            val_result = self.validator.validate(
+                output.output_text, request, current_tier=RouteTier.LARGE_MODEL_D
+            )
+            route_trace.append(
+                {
+                    "step": "fallback_validation",
+                    "is_valid": val_result.is_valid,
+                    "failure_code": val_result.failure_code,
+                }
+            )
+
+        # Step 10: Cache validated eligible result
+        self._store_cache_if_eligible(
+            cache_key=cache_key,
+            request=request,
+            current_tier=current_tier,
+            output=output,
+            val_result=val_result,
+            route_trace=route_trace,
+        )
+
         # Step 11: Finalize outcome and log telemetry
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
         return self._finalize_result(
@@ -837,10 +556,147 @@ class RequestPipeline:
             route_trace=route_trace,
         )
 
-    def _execute_tier(
-        self, request: UserRequest, decision: RoutingDecision, tier: RouteTier
-    ) -> HandlerOutput:
-        """Dispatches execution to the corresponding handler or adapter."""
+    async def execute_async(self, request: UserRequest) -> PipelineResult:
+        """Executes the request through the complete 11-step pipeline asynchronously."""
+        start_time = time.perf_counter()
+        route_trace: list[dict[str, Any]] = []
+
+        # Step 1 & 2: Schema validation and privacy policy (shared helper)
+        self._validate_request(request, route_trace)
+
+        # Step 3 & 4: Route selection and constraint satisfaction (shared helper)
+        decision = self._route_and_check_constraints(request, route_trace)
+
+        # Step 5: Canonical cache key and eligibility (shared helper)
+        cache_key, is_cache_eligible = self._prepare_cache_key_and_eligibility(
+            request, decision, route_trace
+        )
+
+        # Step 6: Exact-cache lookup
+        if is_cache_eligible and self.privacy_enforcer.is_cache_permitted(request):
+            if hasattr(self.cache, "lookup_async"):
+                cached_output = await self.cache.lookup_async(cache_key)
+            elif hasattr(self.cache, "get_async"):
+                cached_output = await self.cache.get_async(cache_key)
+            else:
+                cached_output = self.cache.get(cache_key)
+
+            if cached_output:
+                route_trace.append({"step": "cache_lookup", "status": "hit"})
+                elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                return self._finalize_result(
+                    request=request,
+                    decision=decision,
+                    output=cached_output,
+                    was_cached=True,
+                    fallback_occurred=False,
+                    fallback_history=[],
+                    validation_passed=True,
+                    elapsed_ms=elapsed_ms,
+                    route_trace=route_trace,
+                )
+            route_trace.append({"step": "cache_lookup", "status": "miss"})
+        else:
+            route_trace.append({"step": "cache_lookup", "status": "bypassed"})
+
+        # Step 7: Execute on cache miss (asynchronous handler invocation)
+        current_tier = decision.selected_tier
+        output = await self._execute_tier_async(request, decision, current_tier)
+        route_trace.append(
+            {
+                "step": "handler_execution",
+                "tier": current_tier.value,
+                "latency_ms": output.latency_ms.value,
+            }
+        )
+
+        if output.needs_clarification:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            route_trace.append(
+                {"step": "clarification_required", "missing": decision.missing_fields}
+            )
+            return self._finalize_result(
+                request=request,
+                decision=decision,
+                output=output,
+                was_cached=False,
+                fallback_occurred=False,
+                fallback_history=[],
+                validation_passed=False,
+                elapsed_ms=elapsed_ms,
+                route_trace=route_trace,
+            )
+
+        # Step 8: Deterministic output validation
+        val_result = self.validator.validate(output.output_text, request, current_tier=current_tier)
+        route_trace.append(
+            {
+                "step": "output_validation",
+                "is_valid": val_result.is_valid,
+                "failure_code": val_result.failure_code,
+                "rejection_reason": val_result.rejection_reason,
+            }
+        )
+
+        # Step 9: Bounded Fallback (Depth max 1)
+        fallback_occurred = False
+        fallback_history: list[FallbackRecord] = []
+        if self._can_attempt_fallback(request, decision, current_tier, val_result, route_trace):
+            fb_rec = FallbackRecord(
+                from_tier=RouteTier.SMALL_MODEL_C,
+                to_tier=RouteTier.LARGE_MODEL_D,
+                rejection_reason=val_result.rejection_reason or "Validation failed on small model.",
+            )
+            fallback_history.append(fb_rec)
+            fallback_occurred = True
+            current_tier = RouteTier.LARGE_MODEL_D
+
+            output = await self._execute_tier_async(request, decision, RouteTier.LARGE_MODEL_D)
+            route_trace.append(
+                {
+                    "step": "fallback_execution",
+                    "to_tier": RouteTier.LARGE_MODEL_D.value,
+                    "latency_ms": output.latency_ms.value,
+                }
+            )
+
+            val_result = self.validator.validate(
+                output.output_text, request, current_tier=RouteTier.LARGE_MODEL_D
+            )
+            route_trace.append(
+                {
+                    "step": "fallback_validation",
+                    "is_valid": val_result.is_valid,
+                    "failure_code": val_result.failure_code,
+                }
+            )
+
+        # Step 10: Cache validated eligible result
+        await self._store_cache_if_eligible_async(
+            cache_key=cache_key,
+            request=request,
+            current_tier=current_tier,
+            output=output,
+            val_result=val_result,
+            route_trace=route_trace,
+        )
+
+        # Step 11: Finalize outcome and log telemetry
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+        return self._finalize_result(
+            request=request,
+            decision=decision,
+            output=output,
+            was_cached=False,
+            fallback_occurred=fallback_occurred,
+            fallback_history=fallback_history,
+            validation_passed=val_result.is_valid,
+            elapsed_ms=elapsed_ms,
+            route_trace=route_trace,
+        )
+
+    def _check_tier_transmission(self, request: UserRequest, tier: RouteTier) -> None:
+        """Enforces privacy checks before external network transmission on model tiers."""
         if tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D):
             can_tx, tx_reason = self.privacy_enforcer.can_transmit_externally(request, tier)
             if not can_tx:
@@ -851,115 +707,75 @@ class RequestPipeline:
                     target_tier=tier.value,
                 )
 
-        if tier == RouteTier.DETERMINISTIC_A:
-            return self.router.execute_local_handler(request, decision)
+    def _execute_tier(
+        self, request: UserRequest, decision: RoutingDecision, tier: RouteTier
+    ) -> HandlerOutput:
+        """Dispatches execution synchronously to the corresponding handler or adapter."""
+        self._check_tier_transmission(request, tier)
 
-        if tier == RouteTier.TEMPLATE_B:
+        if tier in (RouteTier.DETERMINISTIC_A, RouteTier.TEMPLATE_B):
             return self.router.execute_local_handler(request, decision)
 
         if tier == RouteTier.SMALL_MODEL_C:
-            if not isinstance(self.small_adapter, OpenRouterAdapter) and self.budget_tracker:
-                est_cost = self.budget_tracker.estimate_call_cost(
-                    self.small_adapter.model_id, request.prompt, request.task_parameters.max_tokens
-                )
-                res_tok = self.budget_tracker.reserve(est_cost)
-                try:
-                    model_res = self.small_adapter.generate(
-                        request.prompt, max_tokens=request.task_parameters.max_tokens
-                    )
-                except Exception:
-                    self.budget_tracker.release(res_tok)
-                    raise
-                self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
-            else:
-                model_res = self.small_adapter.generate(
+            adapter = self.small_adapter
+        elif tier == RouteTier.LARGE_MODEL_D:
+            adapter = self.large_adapter
+        else:
+            raise PipelineExecutionError(f"Unsupported execution tier: {tier}")
+
+        if not isinstance(adapter, OpenRouterAdapter) and self.budget_tracker:
+            est_cost = self.budget_tracker.estimate_call_cost(
+                adapter.model_id, request.prompt, request.task_parameters.max_tokens
+            )
+            res_tok = self.budget_tracker.reserve(est_cost)
+            try:
+                model_res = adapter.generate(
                     request.prompt, max_tokens=request.task_parameters.max_tokens
                 )
-            return self._model_result_to_handler_output(model_res, RouteTier.SMALL_MODEL_C)
-
-        if tier == RouteTier.LARGE_MODEL_D:
-            if not isinstance(self.large_adapter, OpenRouterAdapter) and self.budget_tracker:
-                est_cost = self.budget_tracker.estimate_call_cost(
-                    self.large_adapter.model_id, request.prompt, request.task_parameters.max_tokens
-                )
-                res_tok = self.budget_tracker.reserve(est_cost)
-                try:
-                    model_res = self.large_adapter.generate(
-                        request.prompt, max_tokens=request.task_parameters.max_tokens
-                    )
-                except Exception:
-                    self.budget_tracker.release(res_tok)
-                    raise
-                self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
-            else:
-                model_res = self.large_adapter.generate(
-                    request.prompt, max_tokens=request.task_parameters.max_tokens
-                )
-            return self._model_result_to_handler_output(model_res, RouteTier.LARGE_MODEL_D)
-
-        raise PipelineExecutionError(f"Unsupported execution tier: {tier}")
+            except Exception:
+                self.budget_tracker.release(res_tok)
+                raise
+            self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
+        else:
+            model_res = adapter.generate(
+                request.prompt, max_tokens=request.task_parameters.max_tokens
+            )
+        return self._model_result_to_handler_output(model_res, tier)
 
     async def _execute_tier_async(
         self, request: UserRequest, decision: RoutingDecision, tier: RouteTier
     ) -> HandlerOutput:
         """Dispatches execution asynchronously to the corresponding handler or adapter."""
-        if tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D):
-            can_tx, tx_reason = self.privacy_enforcer.can_transmit_externally(request, tier)
-            if not can_tx:
-                raise PrivacyViolationError(
-                    tx_reason
-                    or f"Blocked external transmission of {request.privacy_class.value} data.",
-                    privacy_class=request.privacy_class.value,
-                    target_tier=tier.value,
-                )
+        self._check_tier_transmission(request, tier)
 
-        if tier == RouteTier.DETERMINISTIC_A:
-            return self.router.execute_local_handler(request, decision)
-
-        if tier == RouteTier.TEMPLATE_B:
+        if tier in (RouteTier.DETERMINISTIC_A, RouteTier.TEMPLATE_B):
             return self.router.execute_local_handler(request, decision)
 
         if tier == RouteTier.SMALL_MODEL_C:
-            if not isinstance(self.small_adapter, OpenRouterAdapter) and self.budget_tracker:
-                est_cost = self.budget_tracker.estimate_call_cost(
-                    self.small_adapter.model_id, request.prompt, request.task_parameters.max_tokens
-                )
-                res_tok = self.budget_tracker.reserve(est_cost)
-                try:
-                    model_res = await self.small_adapter.generate_async(
-                        request.prompt, max_tokens=request.task_parameters.max_tokens
-                    )
-                except Exception:
-                    self.budget_tracker.release(res_tok)
-                    raise
-                self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
-            else:
-                model_res = await self.small_adapter.generate_async(
+            adapter = self.small_adapter
+        elif tier == RouteTier.LARGE_MODEL_D:
+            adapter = self.large_adapter
+        else:
+            raise PipelineExecutionError(f"Unsupported execution tier: {tier}")
+
+        if not isinstance(adapter, OpenRouterAdapter) and self.budget_tracker:
+            est_cost = self.budget_tracker.estimate_call_cost(
+                adapter.model_id, request.prompt, request.task_parameters.max_tokens
+            )
+            res_tok = self.budget_tracker.reserve(est_cost)
+            try:
+                model_res = await adapter.generate_async(
                     request.prompt, max_tokens=request.task_parameters.max_tokens
                 )
-            return self._model_result_to_handler_output(model_res, RouteTier.SMALL_MODEL_C)
-
-        if tier == RouteTier.LARGE_MODEL_D:
-            if not isinstance(self.large_adapter, OpenRouterAdapter) and self.budget_tracker:
-                est_cost = self.budget_tracker.estimate_call_cost(
-                    self.large_adapter.model_id, request.prompt, request.task_parameters.max_tokens
-                )
-                res_tok = self.budget_tracker.reserve(est_cost)
-                try:
-                    model_res = await self.large_adapter.generate_async(
-                        request.prompt, max_tokens=request.task_parameters.max_tokens
-                    )
-                except Exception:
-                    self.budget_tracker.release(res_tok)
-                    raise
-                self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
-            else:
-                model_res = await self.large_adapter.generate_async(
-                    request.prompt, max_tokens=request.task_parameters.max_tokens
-                )
-            return self._model_result_to_handler_output(model_res, RouteTier.LARGE_MODEL_D)
-
-        raise PipelineExecutionError(f"Unsupported execution tier: {tier}")
+            except Exception:
+                self.budget_tracker.release(res_tok)
+                raise
+            self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
+        else:
+            model_res = await adapter.generate_async(
+                request.prompt, max_tokens=request.task_parameters.max_tokens
+            )
+        return self._model_result_to_handler_output(model_res, tier)
 
     def _model_result_to_handler_output(self, model_res: Any, tier: RouteTier) -> HandlerOutput:
         return HandlerOutput(

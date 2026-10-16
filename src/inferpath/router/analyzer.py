@@ -359,7 +359,35 @@ class RequestAnalyzer:
 
     def _is_arithmetic(self, prompt: str) -> bool:
         lower = prompt.lower()
-        if any(w in lower for w in ["calculate", "compute", "what is", "solve", "evaluate"]):
+        # Reject programming / code generation requests that mention math
+        if any(
+            w in lower
+            for w in [
+                "write a python",
+                "python function",
+                "write code",
+                "write a function",
+                "script",
+                "programming",
+                "historical significance",
+                "significance of",
+            ]
+        ):
+            return False
+
+        if any(
+            w in lower
+            for w in [
+                "calculate",
+                "compute",
+                "what is",
+                "solve",
+                "evaluate",
+                "calculer",
+                "multiplied by",
+                "times",
+            ]
+        ):
             # Check if there is an arithmetic expression
             match = SafeCalculator.EXPR_EXTRACTION_PATTERN.search(prompt)
             if match:

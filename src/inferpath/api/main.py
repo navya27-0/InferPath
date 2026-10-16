@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import hmac
 import os
-import threading
-import time
 import uuid
 from typing import Any
 
@@ -13,6 +11,8 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from inferpath import __version__
+from inferpath.config.deployment_profiles import DeploymentProfileConfig, get_deployment_profile
 from inferpath.models.domain import TaskParameters, UserRequest
 from inferpath.models.enums import PrivacyClass
 from inferpath.pipeline import PipelineExecutionError, RequestPipeline
@@ -20,45 +20,13 @@ from inferpath.router.strategies import ConstraintsUnsatisfiableError
 from inferpath.security.budget import BudgetExceededError
 from inferpath.security.hashing import scrub_api_keys
 from inferpath.security.privacy import PrivacyViolationError
+from inferpath.security.secret_manager import GLOBAL_SECRET_MANAGER
+from inferpath.services.rate_limiter import RateLimiter
 from inferpath.telemetry.metrics import GLOBAL_METRICS
+from inferpath.telemetry.structured_logging import configure_structured_logging, current_request_id
+from inferpath.telemetry.tracing import GLOBAL_TRACER
 
 MAX_PROMPT_CHARS = 32_768
-
-
-class RateLimiter:
-    """In-memory rate limiter using a sliding 60-second window with bounded storage."""
-
-    def __init__(self, requests_per_minute: int = 120, max_clients: int = 10_000):
-        self.requests_per_minute = requests_per_minute
-        self.max_clients = max_clients
-        self._history: dict[str, list[float]] = {}
-        self._lock = threading.Lock()
-
-    def is_allowed(self, client_id: str) -> bool:
-        now = time.monotonic()
-        cutoff = now - 60.0
-        with self._lock:
-            history = self._history.get(client_id, [])
-            valid_history = [t for t in history if t > cutoff]
-
-            if len(valid_history) >= self.requests_per_minute:
-                self._history[client_id] = valid_history
-                return False
-
-            # Bounded capacity check
-            if client_id not in self._history and len(self._history) >= self.max_clients:
-                # Evict expired client histories
-                expired_keys = [k for k, v in self._history.items() if not v or max(v) <= cutoff]
-                for k in expired_keys:
-                    del self._history[k]
-                # If still at cap, evict oldest entry
-                if len(self._history) >= self.max_clients:
-                    oldest_k = next(iter(self._history))
-                    del self._history[oldest_k]
-
-            valid_history.append(now)
-            self._history[client_id] = valid_history
-            return True
 
 
 class RespondRequest(BaseModel):
@@ -116,24 +84,44 @@ def create_app(
     rate_limiter: RateLimiter | None = None,
     api_key: str | None = None,
     deployment_mode: str | None = None,
+    deployment_profile: DeploymentProfileConfig | str | None = None,
     trusted_proxies: set[str] | None = None,
 ) -> FastAPI:
     """Application factory supporting pipeline, rate limiting, and auth injection."""
     app = FastAPI(
         title="InferPath API",
-        version="0.1.0",
+        version=__version__,
         description="Resource-aware AI inference routing service",
     )
     pipeline_instance = pipeline or RequestPipeline()
-    limiter = rate_limiter or RateLimiter(requests_per_minute=120)
 
-    # Deployment mode configuration ("local-demo" vs "protected")
-    dep_mode = (
-        deployment_mode
-        if deployment_mode is not None
-        else os.getenv("INFERPATH_DEPLOYMENT_MODE", "local-demo").strip().lower()
+    # Resolve active deployment profile
+    active_profile = (
+        deployment_profile
+        if isinstance(deployment_profile, DeploymentProfileConfig)
+        else get_deployment_profile(
+            str(deployment_profile) if deployment_profile else deployment_mode
+        )
     )
-    required_api_key = api_key if api_key is not None else os.getenv("INFERPATH_API_KEY", "")
+
+    # Initialize rate limiter with profile defaults if not injected
+    limiter = rate_limiter or RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
+
+    # Deployment mode configuration
+    dep_mode = deployment_mode if deployment_mode is not None else active_profile.name.value
+    # Resolve API key from argument, environment, or secret manager
+    required_api_key = (
+        api_key if api_key is not None else GLOBAL_SECRET_MANAGER.get("INFERPATH_API_KEY", "")
+    )
+
+    # Configure structured logging if enabled in profile
+    if active_profile.structured_json_logging:
+        configure_structured_logging(
+            level=active_profile.log_level,
+            json_format=True,
+            service_name="inferpath",
+            environment=dep_mode,
+        )
 
     # Trusted proxy network configuration
     configured_proxies: set[str] = set()
@@ -232,8 +220,9 @@ def create_app(
         return {
             "status": "healthy",
             "service": "inferpath",
-            "version": "0.1.0",
+            "version": __version__,
             "deployment_mode": dep_mode,
+            "profile": active_profile.name.value,
         }
 
     @app.get("/metrics")
@@ -244,7 +233,7 @@ def create_app(
         )
 
     @app.post("/v1/respond", response_model=RespondResponse)
-    async def respond(body: RespondRequest, request: Request):
+    async def respond(body: RespondRequest, request: Request, response: Response):
         # 1. Authentication check
         client_key = request.headers.get("X-API-Key")
         if not client_key:
@@ -285,7 +274,7 @@ def create_app(
                 status_code=429,
                 detail={
                     "error": "Rate limit exceeded",
-                    "detail": "Maximum 120 requests per minute allowed.",
+                    "detail": f"Maximum {limiter.requests_per_minute} requests per minute allowed.",
                     "code": "RATE_LIMIT_EXCEEDED",
                 },
             )
@@ -358,75 +347,117 @@ def create_app(
             metadata=body.metadata,
         )
 
-        try:
-            result = await pipeline_instance.execute_async(user_req)
-        except PrivacyViolationError:
-            raise
-        except BudgetExceededError:
-            raise
-        except ConstraintsUnsatisfiableError:
-            raise
-        except PipelineExecutionError as err:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "Pipeline execution error",
-                    "detail": scrub_api_keys(str(err)),
-                    "code": "PIPELINE_ERROR",
-                },
-            ) from err
-        except Exception as err:
-            # Never expose internal secrets or tracebacks to the client
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "error": "Inference backend error",
-                    "detail": scrub_api_keys(str(err)),
-                    "code": "BACKEND_ERROR",
-                },
-            ) from err
+        # Trace context extraction from incoming request
+        traceparent = request.headers.get("traceparent")
+        parsed_trace = GLOBAL_TRACER.parse_w3c_traceparent(traceparent)
+        in_trace_id, in_parent_span_id = parsed_trace if parsed_trace else (None, None)
 
-        # Record telemetry metrics
-        GLOBAL_METRICS.record_request(
-            tier=result.final_tier.value,
-            status="success" if result.validation_passed else "validation_failed",
-            latency_ms=result.total_latency_ms.value,
-            cost_usd=result.cost_usd.value,
-            was_cached=result.was_cached,
-            fallback_used=result.fallback_occurred,
-        )
+        with GLOBAL_TRACER.start_as_current_span(
+            name="inferpath.api.respond",
+            trace_id=in_trace_id,
+            parent_span_id=in_parent_span_id,
+            attributes={
+                "http.method": "POST",
+                "http.route": "/v1/respond",
+                "inferpath.request_id": body.request_id,
+                "inferpath.client_ip": client_ip,
+                "inferpath.deployment_mode": dep_mode,
+            },
+        ) as span:
+            # Set context variable for structured logging
+            tok_req = current_request_id.set(body.request_id)
+            try:
+                result = await pipeline_instance.execute_async(user_req)
+            except PrivacyViolationError:
+                span.set_attribute("error", True)
+                span.set_attribute("error.type", "PrivacyViolationError")
+                raise
+            except BudgetExceededError:
+                span.set_attribute("error", True)
+                span.set_attribute("error.type", "BudgetExceededError")
+                raise
+            except ConstraintsUnsatisfiableError:
+                span.set_attribute("error", True)
+                span.set_attribute("error.type", "ConstraintsUnsatisfiableError")
+                raise
+            except PipelineExecutionError as err:
+                span.set_attribute("error", True)
+                span.set_attribute("error.type", "PipelineExecutionError")
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Pipeline execution error",
+                        "detail": scrub_api_keys(str(err)),
+                        "code": "PIPELINE_ERROR",
+                    },
+                ) from err
+            except Exception as err:
+                span.set_attribute("error", True)
+                span.set_attribute("error.type", "InternalException")
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "error": "Inference backend error",
+                        "detail": scrub_api_keys(str(err)),
+                        "code": "BACKEND_ERROR",
+                    },
+                ) from err
+            finally:
+                current_request_id.reset(tok_req)
 
-        return RespondResponse(
-            request_id=result.request_id,
-            text=result.final_output,
-            route=result.final_tier.value,
-            rule_id=result.rule_id,
-            cache_hit=result.was_cached,
-            validated=result.validation_passed,
-            fallback_used=result.fallback_occurred,
-            needs_clarification=result.needs_clarification,
-            clarification_prompt=result.clarification_prompt,
-            cost_usd=result.cost_usd.value,
-            cost_provenance=result.cost_usd.provenance.value,
-            latency_ms=result.total_latency_ms.value,
-            latency_provenance=result.total_latency_ms.provenance.value,
-            route_trace=result.route_trace,
-            input_tokens=result.input_tokens.value if result.input_tokens else None,
-            input_tokens_provenance=result.input_tokens.provenance.value
-            if result.input_tokens
-            else None,
-            output_tokens=result.output_tokens.value if result.output_tokens else None,
-            output_tokens_provenance=result.output_tokens.provenance.value
-            if result.output_tokens
-            else None,
-            provider_reported_cost_usd=result.provider_reported_cost_usd.value
-            if result.provider_reported_cost_usd
-            else None,
-            energy_wh=result.energy_wh.value if result.energy_wh else None,
-            energy_provenance=result.energy_wh.provenance.value if result.energy_wh else None,
-            water_ml=result.water_ml.value if result.water_ml else None,
-            water_provenance=result.water_ml.provenance.value if result.water_ml else None,
-        )
+            # Record telemetry metrics
+            GLOBAL_METRICS.record_request(
+                tier=result.final_tier.value,
+                status="success" if result.validation_passed else "validation_failed",
+                latency_ms=result.total_latency_ms.value,
+                cost_usd=result.cost_usd.value,
+                was_cached=result.was_cached,
+                fallback_used=result.fallback_occurred,
+            )
+
+            # Decorate span with routing outcome
+            span.set_attribute("inferpath.route", result.final_tier.value)
+            span.set_attribute("inferpath.rule_id", result.rule_id or "none")
+            span.set_attribute("inferpath.cache_hit", result.was_cached)
+            span.set_attribute("inferpath.cost_usd", result.cost_usd.value)
+            span.set_attribute("inferpath.latency_ms", result.total_latency_ms.value)
+            span.set_attribute("inferpath.fallback_used", result.fallback_occurred)
+
+            # Inject trace propagation headers into outgoing response
+            response.headers["X-Trace-Id"] = span.trace_id
+            response.headers["traceparent"] = span.export_w3c_traceparent()
+
+            return RespondResponse(
+                request_id=result.request_id,
+                text=result.final_output,
+                route=result.final_tier.value,
+                rule_id=result.rule_id,
+                cache_hit=result.was_cached,
+                validated=result.validation_passed,
+                fallback_used=result.fallback_occurred,
+                needs_clarification=result.needs_clarification,
+                clarification_prompt=result.clarification_prompt,
+                cost_usd=result.cost_usd.value,
+                cost_provenance=result.cost_usd.provenance.value,
+                latency_ms=result.total_latency_ms.value,
+                latency_provenance=result.total_latency_ms.provenance.value,
+                route_trace=result.route_trace,
+                input_tokens=result.input_tokens.value if result.input_tokens else None,
+                input_tokens_provenance=result.input_tokens.provenance.value
+                if result.input_tokens
+                else None,
+                output_tokens=result.output_tokens.value if result.output_tokens else None,
+                output_tokens_provenance=result.output_tokens.provenance.value
+                if result.output_tokens
+                else None,
+                provider_reported_cost_usd=result.provider_reported_cost_usd.value
+                if result.provider_reported_cost_usd
+                else None,
+                energy_wh=result.energy_wh.value if result.energy_wh else None,
+                energy_provenance=result.energy_wh.provenance.value if result.energy_wh else None,
+                water_ml=result.water_ml.value if result.water_ml else None,
+                water_provenance=result.water_ml.provenance.value if result.water_ml else None,
+            )
 
     return app
 

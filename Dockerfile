@@ -2,12 +2,17 @@
 # Python 3.11-slim lightweight base image
 FROM python:3.11-slim
 
+LABEL org.opencontainers.image.title="InferPath" \
+      org.opencontainers.image.version="0.2.0" \
+      org.opencontainers.image.description="Resource-aware AI inference routing service"
+
 # Prevent Python from writing .pyc files and enable unbuffered logging
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/src:/app \
     ADAPTER_MODE=simulated \
     ENVIRONMENT=production \
+    INFERPATH_VERSION=0.2.0 \
     INFERPATH_DEPLOYMENT_MODE=local-demo
 
 WORKDIR /app

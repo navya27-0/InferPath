@@ -45,7 +45,7 @@ class SafeCalculator:
 
     # Regex to extract candidate arithmetic expressions from conversational text
     EXPR_EXTRACTION_PATTERN = re.compile(
-        r"(?:(?:calculate|compute|what is|solve|evaluate)\s+)?([-+]?\(?\d+(?:\.\d+)?(?:\s*(?:\*\*|[\+\-\*\/\%\^])\s*\(?[-+]?\d+(?:\.\d+)?\)?)+(?:\s*\)?)*)",
+        r"(?:(?:calculate|compute|what is|solve|evaluate|calculer)\s*:?\s*)?([-+]?\(?\d+(?:\.\d+)?(?:\s*(?:\*\*|[\+\-\*\/\%\^]|multiplied\s+by|times|divided\s+by|plus|minus)\s*\(?[-+]?\d+(?:\.\d+)?\)?)+(?:\s*\)?)*)",
         re.IGNORECASE,
     )
 
@@ -57,6 +57,12 @@ class SafeCalculator:
         Raises CalculatorError on any syntax error, unsafe construct, or resource limit violation.
         """
         expr_str = expression.strip()
+        # Normalize natural language operators
+        expr_str = re.sub(r"\bmultiplied\s+by\b|\btimes\b", "*", expr_str, flags=re.IGNORECASE)
+        expr_str = re.sub(r"\bdivided\s+by\b", "/", expr_str, flags=re.IGNORECASE)
+        expr_str = re.sub(r"\bplus\b", "+", expr_str, flags=re.IGNORECASE)
+        expr_str = re.sub(r"\bminus\b", "-", expr_str, flags=re.IGNORECASE)
+
         # Handle caret as power if present
         if "^" in expr_str and "**" not in expr_str:
             expr_str = expr_str.replace("^", "**")

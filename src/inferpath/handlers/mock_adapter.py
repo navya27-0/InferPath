@@ -47,9 +47,6 @@ class BaseMockModel:
         # 1. Arithmetic & Unit Conversions
         if "125 * 8 + 450" in clean or ("125" in clean and "8" in clean and "450" in clean):
             return "The calculated result is 1450."
-        # 1. Arithmetic & Unit Conversions
-        if "125 * 8 + 450" in clean or ("125" in clean and "8" in clean and "450" in clean):
-            return "The calculated result is 1450."
         if "15%" in clean and ("84" in clean or "84.00" in clean):
             return "A 15% tip on a bill of $84.00 is $12.60."
         if "100 km/h" in clean or "km/h to mph" in clean or "kilometers per hour" in clean:

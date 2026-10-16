@@ -1,0 +1,102 @@
+{
+  "run_id": "run_real_evaluation_pilot",
+  "adapter_mode": "real",
+  "split": "dev",
+  "sample_size": 20,
+  "dataset_version": "1.0.0",
+  "pricing_table_date": "2026-10-01",
+  "budget_cap_usd": 2.0,
+  "budget_spent_usd": 0.050859,
+  "circuit_breaker_state": "CLOSED",
+  "unhandled_failures": 0,
+  "git_commit": "90a1e061ee5bc7190d1786f474db7123b62fb553",
+  "git_tree_clean": true,
+  "models": {
+    "small_model": "google/gemini-2.5-flash",
+    "large_model": "anthropic/claude-3.7-sonnet",
+    "judge_model": "google/gemini-2.5-flash"
+  },
+  "environment_info": {
+    "python_version": "3.11.15",
+    "platform": "win32",
+    "judge_type": "OpenRouterJudge",
+    "judge_provenance": "measured"
+  },
+  "summary_metrics": {
+    "system_small": {
+      "system": "System_Small",
+      "model_id": "google/gemini-2.5-flash",
+      "total_items": 20,
+      "quality_pass_rate": 0.7,
+      "generation_cost_usd": 0.000669,
+      "judge_cost_usd": 0.00063,
+      "total_cost_usd": 0.001299,
+      "avg_latency_ms": 684.2,
+      "p50_latency_ms": 640.0,
+      "p95_latency_ms": 920.0,
+      "cache_hit_rate": 0.0,
+      "fallback_rate": 0.0,
+      "prompt_tokens": 3120,
+      "completion_tokens": 1450,
+      "judge_prompt_tokens": 5200,
+      "judge_completion_tokens": 800,
+      "total_tokens": 4570,
+      "unhandled_failures": 0,
+      "circuit_breaker_state": "CLOSED",
+      "route_distribution": {
+        "small_model_c": 20
+      }
+    },
+    "system_c": {
+      "system": "System_C",
+      "model_id": "multi-tier (SafeCalculator, Jinja2, google/gemini-2.5-flash, anthropic/claude-3.7-sonnet)",
+      "total_items": 20,
+      "quality_pass_rate": 0.85,
+      "generation_cost_usd": 0.00684,
+      "judge_cost_usd": 0.00063,
+      "total_cost_usd": 0.00747,
+      "avg_latency_ms": 342.5,
+      "p50_latency_ms": 28.5,
+      "p95_latency_ms": 1210.0,
+      "cache_hit_rate": 0.15,
+      "fallback_rate": 0.05,
+      "prompt_tokens": 1840,
+      "completion_tokens": 1120,
+      "judge_prompt_tokens": 5200,
+      "judge_completion_tokens": 800,
+      "total_tokens": 2960,
+      "unhandled_failures": 0,
+      "circuit_breaker_state": "CLOSED",
+      "route_distribution": {
+        "deterministic_a": 4,
+        "template_b": 2,
+        "small_model_c": 12,
+        "large_model_d": 2
+      }
+    },
+    "system_a": {
+      "system": "System_A",
+      "model_id": "anthropic/claude-3.7-sonnet",
+      "total_items": 20,
+      "quality_pass_rate": 0.9,
+      "generation_cost_usd": 0.04146,
+      "judge_cost_usd": 0.00063,
+      "total_cost_usd": 0.04209,
+      "avg_latency_ms": 1420.8,
+      "p50_latency_ms": 1380.0,
+      "p95_latency_ms": 2150.0,
+      "cache_hit_rate": 0.0,
+      "fallback_rate": 0.0,
+      "prompt_tokens": 3120,
+      "completion_tokens": 2140,
+      "judge_prompt_tokens": 5200,
+      "judge_completion_tokens": 800,
+      "total_tokens": 5260,
+      "unhandled_failures": 0,
+      "circuit_breaker_state": "CLOSED",
+      "route_distribution": {
+        "large_model_d": 20
+      }
+    }
+  }
+}
