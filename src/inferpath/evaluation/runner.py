@@ -62,7 +62,15 @@ def run_full_benchmark_suite(
     else:
         config_hash = list(registry.registered_configs.keys())[0]
 
-    harness = ExperimentHarness(adapter_mode=adapter_mode, output_base_dir=output_dir, q_min=0.70)
+    if output_dir:
+        out_base = Path(output_dir)
+    else:
+        sub = "simulated" if adapter_mode == "simulated" else "real"
+        if split == "test":
+            sub = f"{sub}_test"
+        out_base = Path("data") / "results" / sub
+
+    harness = ExperimentHarness(adapter_mode=adapter_mode, output_base_dir=out_base, q_min=0.70)
 
     systems = [
         "System_A",  # Large-only baseline
