@@ -79,11 +79,7 @@ def load_human_review_csv(csv_path: Path | str) -> list[HumanReviewRecord]:
         reader = csv.DictReader(f)
         for row in reader:
             raw_prov = row.get("provenance")
-            prov = (
-                raw_prov.strip().lower()
-                if raw_prov and raw_prov.strip()
-                else "unknown"
-            )
+            prov = raw_prov.strip().lower() if raw_prov and raw_prov.strip() else "unknown"
 
             # Check candidate A score
             score_a_str = row.get("score_a_1_to_5", "").strip()

@@ -287,8 +287,12 @@ def run_full_benchmark_suite(
     md_table = format_markdown_table(table_rows)
 
     # 7. Task Family Breakdown & Quality Difference CI
-    sys_a_logs_first = all_system_logs.get("System_A", [[]])[0] if all_system_logs.get("System_A") else []
-    sys_c_logs_first = all_system_logs.get("System_C", [[]])[0] if all_system_logs.get("System_C") else []
+    sys_a_logs_first = (
+        all_system_logs.get("System_A", [[]])[0] if all_system_logs.get("System_A") else []
+    )
+    sys_c_logs_first = (
+        all_system_logs.get("System_C", [[]])[0] if all_system_logs.get("System_C") else []
+    )
     task_family_rows = compute_per_task_family_breakdown(items, sys_a_logs_first, sys_c_logs_first)
     task_family_table_md = format_markdown_table(task_family_rows)
 
@@ -307,8 +311,7 @@ def run_full_benchmark_suite(
         else 0.0041
     )
     sys_c_lat_mean = (
-        sum(s.avg_latency_ms for s in all_summaries["System_C"])
-        / len(all_summaries["System_C"])
+        sum(s.avg_latency_ms for s in all_summaries["System_C"]) / len(all_summaries["System_C"])
         if all_summaries.get("System_C")
         else 51.1
     )
@@ -364,7 +367,7 @@ def run_full_benchmark_suite(
         f.write(
             "> [!IMPORTANT]\n"
             "> **Research Trade-Off Analysis**: Rather than asserting uncompromised quality parity, InferPath explores the multi-tier cost-latency-quality trade-off space. Under this benchmark workload, full InferPath (System C) achieves an **84.9% cost reduction** and **42.9% latency reduction** relative to the Always-Large baseline (System A), with a measured quality pass rate decrease from 69.4% to 63.1% ($\\Delta Q = -6.3\\%$, 95% CI `["
-            + f"{quality_diff_ci['ci_lower']*100:.1f}%, {quality_diff_ci['ci_upper']*100:.1f}%"
+            + f"{quality_diff_ci['ci_lower'] * 100:.1f}%, {quality_diff_ci['ci_upper'] * 100:.1f}%"
             + "]`).\n\n"
         )
         f.write("### System Benchmark Results\n\n")

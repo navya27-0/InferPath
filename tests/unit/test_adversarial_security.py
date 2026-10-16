@@ -14,8 +14,6 @@ Covers:
 """
 
 import concurrent.futures
-import tempfile
-from pathlib import Path
 
 import httpx
 import pytest
@@ -25,15 +23,13 @@ from inferpath.api.main import RateLimiter, create_app
 from inferpath.cache.canonical_key import CanonicalKeyBuilder
 from inferpath.cache.exact_cache import ExactCache
 from inferpath.config.settings import PricingTable, Settings
-from inferpath.handlers.mock_adapter import MockLargeModel, MockSmallModel
 from inferpath.handlers.openrouter_adapter import OpenRouterAdapter, OpenRouterProviderError
-from inferpath.models.domain import HandlerOutput, TaskParameters, UserRequest
+from inferpath.models.domain import HandlerOutput, UserRequest
 from inferpath.models.enums import PrivacyClass, ProvenanceLabel, RouteTier
 from inferpath.models.telemetry import ProvenanceValue
 from inferpath.pipeline import RequestPipeline
-from inferpath.router.analyzer import contains_sensitive_patterns
-from inferpath.security.hashing import hash_prompt, scrub_api_keys
-from inferpath.security.privacy import PrivacyPolicyEnforcer, PrivacyViolationError
+from inferpath.security.hashing import scrub_api_keys
+from inferpath.security.privacy import PrivacyPolicyEnforcer
 
 
 # -------------------------------------------------------------

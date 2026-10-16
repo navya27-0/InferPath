@@ -363,12 +363,15 @@ class RequestPipeline:
                     route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
 
                 # Check caller quality constraint against Tier D capability
-                if can_fallback and request.task_parameters.minimum_quality is not None:
-                    if request.task_parameters.minimum_quality > 0.96:
-                        can_fallback = False
-                        route_trace.append(
-                            {"step": "fallback_blocked", "reason": "user_quality_constraint"}
-                        )
+                if (
+                    can_fallback
+                    and request.task_parameters.minimum_quality is not None
+                    and request.task_parameters.minimum_quality > 0.96
+                ):
+                    can_fallback = False
+                    route_trace.append(
+                        {"step": "fallback_blocked", "reason": "user_quality_constraint"}
+                    )
 
                 # Check caller budget constraint against Tier D cost estimate
                 if can_fallback and request.task_parameters.maximum_cost_usd is not None:
@@ -707,12 +710,15 @@ class RequestPipeline:
                     route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
 
                 # Check caller quality constraint against Tier D capability
-                if can_fallback and request.task_parameters.minimum_quality is not None:
-                    if request.task_parameters.minimum_quality > 0.96:
-                        can_fallback = False
-                        route_trace.append(
-                            {"step": "fallback_blocked", "reason": "user_quality_constraint"}
-                        )
+                if (
+                    can_fallback
+                    and request.task_parameters.minimum_quality is not None
+                    and request.task_parameters.minimum_quality > 0.96
+                ):
+                    can_fallback = False
+                    route_trace.append(
+                        {"step": "fallback_blocked", "reason": "user_quality_constraint"}
+                    )
 
                 # Check caller budget constraint against Tier D cost estimate
                 if can_fallback and request.task_parameters.maximum_cost_usd is not None:

@@ -430,7 +430,11 @@ class ConstraintAwareRouter(BaseRouter):
         # When empirical_quality_priors are provided (e.g. from validation split calibration), they take precedence.
         category_key = request.metadata.get("task_category") if request.metadata else None
         task_intent_key = analysis.task_intent or "standard"
-        task_family_key = analysis.task_family.value if hasattr(analysis.task_family, "value") else str(analysis.task_family)
+        task_family_key = (
+            analysis.task_family.value
+            if hasattr(analysis.task_family, "value")
+            else str(analysis.task_family)
+        )
         matched_prior = (
             (self.empirical_quality_priors.get(category_key) if category_key else None)
             or self.empirical_quality_priors.get(task_intent_key)
@@ -668,7 +672,6 @@ class LearnedRouter(BaseRouter):
             ([22, 4, 8, 3, 2, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0.5], 0),
             ([28, 5, 10, 5, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0.7], 0),
             ([32, 6, 12, 4, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.6], 0),
-
             # Tier B samples (structured templates) - Class 1
             ([60, 10, 20, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.7], 1),
             ([80, 12, 24, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.7], 1),
@@ -682,7 +685,6 @@ class LearnedRouter(BaseRouter):
             ([95, 15, 30, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.7], 1),
             ([150, 24, 48, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.7], 1),
             ([85, 13, 26, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.6], 1),
-
             # Tier C samples (standard QA / summarization / extraction) - Class 2
             ([40, 7, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.7], 2),
             ([60, 10, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.7], 2),
@@ -696,7 +698,6 @@ class LearnedRouter(BaseRouter):
             ([85, 13, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0.7], 2),
             ([95, 16, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.75], 2),
             ([105, 17, 34, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0.7], 2),
-
             # Tier D samples (complex multi-hop reasoning, high Q_min) - Class 3
             ([150, 25, 50, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0.95], 3),
             ([200, 32, 64, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0.90], 3),

@@ -342,9 +342,7 @@ def classify_item_task_family(item: Any) -> str:
     if cat in ("rewriting", "short_explanations"):
         return "Structured extraction"
     if cat == "multi_step_reasoning":
-        if any(
-            w in prompt_lower for w in ("proof", "prove", "theorem", "lemma", "formal proof")
-        ):
+        if any(w in prompt_lower for w in ("proof", "prove", "theorem", "lemma", "formal proof")):
             return "Formal proof"
         return "Reasoning"
     if cat == "synthesis":
@@ -363,7 +361,6 @@ def compute_per_task_family_breakdown(
     Arithmetic, Unit conversion, Classification, Summarization, Structured extraction,
     Templates, Reasoning, Formal proof, Time-sensitive tasks, Private/internal tasks.
     """
-    from collections import Counter
 
     a_by_item = {log["item_id"]: log for log in sys_a_logs}
     c_by_item = {log["item_id"]: log for log in sys_c_logs}
@@ -410,8 +407,12 @@ def compute_per_task_family_breakdown(
             continue
         count = len(fam_items)
 
-        passes_a = [1 if a_by_item.get(i.item_id, {}).get("meets_q_min", False) else 0 for i in fam_items]
-        passes_c = [1 if c_by_item.get(i.item_id, {}).get("meets_q_min", False) else 0 for i in fam_items]
+        passes_a = [
+            1 if a_by_item.get(i.item_id, {}).get("meets_q_min", False) else 0 for i in fam_items
+        ]
+        passes_c = [
+            1 if c_by_item.get(i.item_id, {}).get("meets_q_min", False) else 0 for i in fam_items
+        ]
         costs_a = [a_by_item.get(i.item_id, {}).get("cost_usd_calculated", 0.0) for i in fam_items]
         costs_c = [c_by_item.get(i.item_id, {}).get("cost_usd_calculated", 0.0) for i in fam_items]
         lats_c = [c_by_item.get(i.item_id, {}).get("latency_ms", 0.0) for i in fam_items]
@@ -422,9 +423,7 @@ def compute_per_task_family_breakdown(
         delta_q = pass_rate_c - pass_rate_a
         avg_cost_a = sum(costs_a) / count if count > 0 else 0.0
         avg_cost_c = sum(costs_c) / count if count > 0 else 0.0
-        cost_red = (
-            ((avg_cost_a - avg_cost_c) / avg_cost_a) * 100.0 if avg_cost_a > 0 else 0.0
-        )
+        cost_red = ((avg_cost_a - avg_cost_c) / avg_cost_a) * 100.0 if avg_cost_a > 0 else 0.0
         avg_lat_c = sum(lats_c) / count if count > 0 else 0.0
 
         most_common_tier = Counter(tiers_c).most_common(1)[0][0] if tiers_c else "N/A"
@@ -441,7 +440,9 @@ def compute_per_task_family_breakdown(
                 "Cost_Reduction": f"{cost_red:.1f}%",
                 "Avg_Latency_C_ms": f"{avg_lat_c:.1f} ms",
                 "Primary_Route_Tier": most_common_tier,
-                "Evaluation_Insight": insights_map.get(fam, "Multi-tier cascade balancing cost and quality."),
+                "Evaluation_Insight": insights_map.get(
+                    fam, "Multi-tier cascade balancing cost and quality."
+                ),
             }
         )
 

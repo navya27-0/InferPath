@@ -35,7 +35,9 @@ def discover_all_manifests(results_dir: Path) -> list[dict[str, Any]]:
     return manifests
 
 
-def load_benchmark_summary(results_dir: Path, subfolder: str = "simulated") -> dict[str, Any] | None:
+def load_benchmark_summary(
+    results_dir: Path, subfolder: str = "simulated"
+) -> dict[str, Any] | None:
     """Loads benchmark summary JSON if present."""
     summary_path = results_dir / subfolder / "benchmark_summary.json"
     if summary_path.exists():
@@ -154,9 +156,7 @@ def generate_results_markdown() -> str:
                 "| Task Family | Count | System A Pass | System C Pass | Quality Delta | "
                 "Avg Cost (C) | Cost vs A | Primary Tier | Insight |"
             )
-            lines.append(
-                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
-            )
+            lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
             for tf in tf_rows:
                 lines.append(
                     f"| {tf.get('Task_Family')} | {tf.get('Count')} | {tf.get('System_A_Pass_Rate')} | "
