@@ -33,7 +33,7 @@ To rigorously evaluate the system, InferPath implements and benchmarks five rout
 - **`System_Small` (Always-Small)**: Directs all queries to ~8B models (extreme low-cost baseline).
 - **`System_B` (Rules + Large + Cache)**: Traditional heuristic caching and rules with large-model fallback.
 - **`System_C` (Constraint-Aware Router)**: InferPath's proposed optimizer choosing the lowest-cost tier meeting all constraints, with single-level Tier C $\to$ Tier D validation fallback.
-- **`System_Learned` (Random Forest Classifier)**: 4-class machine-learned router trained on prompt structural features.
+- **`System_Learned` (Random Forest Classifier)**: Proof-of-concept learned baseline evaluated on a synthetic calibration corpus using 15 prompt structural features.
 
 ### Production Hardening & Observability
 Beyond research benchmarks, InferPath is engineered as an enterprise-grade service:
@@ -231,7 +231,7 @@ python scripts/update_readme_results.py
 ### Understanding the Quality Pass Rate & Enterprise Privacy Invariants
 
 - **Enterprise Privacy Interception**: The 160-item `dev` benchmark contains 28 items (17.5%) classified as `internal` or `confidential`. Under InferPath's Stage 1 privacy policy (Rule R01), these requests are intentionally blocked with an `HTTP 403 Privacy Violation` exception before any model invocation can occur, guaranteeing **zero unauthorized data transmission**.
-- **Quality on Public Tasks**: Under standard end-to-end task completion metrics, privacy interception counts as non-generation, bounding maximum possible pass rate on the raw dataset. On the 132 public items, **InferPath (System C) achieves a 76.5% pass rate** compared to System A's 84.1% (a measured 7.6% quality trade-off under simulated workloads), while slashing inference cost by **84.9%** and latency by **42.9%**.
+- **Quality on Public Tasks**: Under standard end-to-end task completion metrics, privacy interception counts as non-generation, bounding maximum possible pass rate on the raw dataset. On the 132 public items, **InferPath (System C) achieves a 76.5% pass rate** compared to System A's 84.1% (a measured 7.6% quality trade-off under simulated workloads), while slashing inference cost by **84.9%** and latency by **70.2%** (from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup).
 - **Constraint-Aware vs. Learned Routing**: While the `RandomForest` classifier (`System_Learned`) makes fast statistical decisions, InferPath's `ConstraintAwareRouter` strictly enforces caller-defined constraints ($Q_{\min}, B_{\max}, L_{\max}$) prior to dispatch, pruning ineligible tiers and failing fast with `CONSTRAINTS_UNSATISFIABLE` (HTTP 422) without invoking backend models when no tier meets all constraints.
 
 ### Multi-Strategy Empirical Pareto Frontiers
@@ -339,5 +339,5 @@ When describing InferPath in technical portfolios and job interviews, use precis
 ### Key Talking Points & Deep Dives
 - **Architecture**: 4 discrete execution tiers (AST arithmetic $<1$ ms, Jinja2 templates, ~8B models, ~70B+ models) solving constrained optimization: $\min \text{Cost} + \lambda \cdot \text{Latency}$ subject to $\hat{Q} \ge Q_{\min}$, privacy policies, and caller budgets.
 - **Production-Oriented Prototype**: Stateful **Circuit Breaker** (`CLOSED`/`OPEN`/`HALF_OPEN`) on inference adapters, process-local rate limiting, canonical SHA-256 exact caching with SQLite, and Prometheus `/metrics` export.
-- **Empirical Trade-Off Findings**: Under offline simulated workloads on 160 dev tasks, demonstrated an **84.9% cost reduction** and **42.9% latency reduction** with an explicit quality trade-off (63.1% vs 69.4% overall pass rate), validated via double-blind multi-rater evaluation ($\kappa = 0.859$).
+- **Empirical Trade-Off Findings**: Under offline simulated workloads on 160 dev tasks, demonstrated an **84.9% cost reduction** and **70.2% latency reduction** (from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup) with an explicit quality trade-off (63.1% vs 69.4% overall pass rate), validated via a pilot double-blind multi-rater evaluation ($\kappa = 0.859$).
 - **Interview Guide**: See [`docs/resume_and_interview_guide.md`](docs/resume_and_interview_guide.md) for complete STAR-method interview narratives and technical Q&A.

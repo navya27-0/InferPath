@@ -69,6 +69,9 @@ class SystemExecutionSummary(BaseModel):
     over_escalation_rate: float
     under_escalation_rate: float
     route_distribution: dict[str, int]
+    mock_coverage_rate: float = 1.0
+    unrecognized_mock_prompt_count: int = 0
+    validation_failure_count: int = 0
 
 
 class RunManifest(BaseModel):
@@ -319,6 +322,8 @@ class ExperimentHarness:
         regrets: list[float] = []
         over_esc_count = 0
         under_esc_count = 0
+        unrecognized_mock_count = 0
+        validation_fail_count = 0
 
         for item in ordered_items:
             req = UserRequest(
@@ -581,6 +586,16 @@ class ExperimentHarness:
                 prompt_text = item.prompt
                 resp_text = res.final_output
 
+            is_unrec_mock = self.adapter_mode == "simulated" and (
+                "Deterministic simulated completion for request" in res.final_output
+                or res.final_output.startswith("[mock-")
+                or res.final_output.startswith("[mock_")
+            )
+            if is_unrec_mock:
+                unrecognized_mock_count += 1
+            if not res.validation_passed:
+                validation_fail_count += 1
+
             item_logs.append(
                 {
                     "item_id": item.item_id,
@@ -596,6 +611,12 @@ class ExperimentHarness:
                     "was_cached": res.was_cached,
                     "validation_passed": res.validation_passed,
                     "fallback_occurred": res.fallback_occurred,
+                    "is_unrecognized_mock_prompt": is_unrec_mock,
+                    "failure_code": (
+                        "unrecognized_mock_prompt"
+                        if is_unrec_mock
+                        else (None if res.validation_passed else "validation_failure")
+                    ),
                     "cost_usd_calculated": res.cost_usd.value,
                     "judge_cost_usd": judge_res.judge_cost_usd,
                     "latency_ms": res.total_latency_ms.value,
@@ -624,6 +645,12 @@ class ExperimentHarness:
         total_j_cost = round(sum(judge_costs), 6)
         total_ev_cost = round(total_gen_cost + total_j_cost, 6)
 
+        mock_cov_rate = (
+            round(1.0 - (unrecognized_mock_count / n_items), 4)
+            if (n_items and self.adapter_mode == "simulated")
+            else 1.0
+        )
+
         summary = SystemExecutionSummary(
             system_id=system_id,
             run_id=run_id,
@@ -648,6 +675,9 @@ class ExperimentHarness:
             over_escalation_rate=round(over_esc_count / n_items, 4) if n_items else 0.0,
             under_escalation_rate=round(under_esc_count / n_items, 4) if n_items else 0.0,
             route_distribution=route_dist,
+            mock_coverage_rate=mock_cov_rate,
+            unrecognized_mock_prompt_count=unrecognized_mock_count,
+            validation_failure_count=validation_fail_count,
         )
 
         dataset_path = Path("data/pilot_dataset.json")

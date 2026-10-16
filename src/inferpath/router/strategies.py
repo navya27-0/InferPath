@@ -577,10 +577,10 @@ class LearnedRouter(BaseRouter):
     Supervised Machine Learning Router prototype predicting optimal processing tier from feature vectors.
 
     Research & Development Status:
-    This router serves as a proof-of-concept demonstration classifier illustrating feature-based
-    routing. In production research, it is trained on an expanded balanced synthetic corpus and
-    evaluated via repeated cross-validation, confusion matrices, and calibration metrics rather than
-    claimed as a mature enterprise ML system.
+    This router serves as a proof-of-concept learned baseline evaluated on a synthetic calibration
+    corpus. 5-fold cross-validation establishes that the classifier can reproduce patterns in its
+    own synthetic training corpus, but does not establish validated generalization on unseen real prompts.
+    It demonstrates feature extraction and ML dispatch without hard constraint guarantees.
 
     Features extracted (15 structural signals):
     - Text length, word count, token count estimate

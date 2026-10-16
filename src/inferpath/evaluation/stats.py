@@ -357,9 +357,10 @@ def compute_per_task_family_breakdown(
 ) -> list[dict[str, Any]]:
     """Computes fine-grained per-task-family metrics revealing specific routing strengths and failure trade-offs.
 
-    Covers 10 families:
-    Arithmetic, Unit conversion, Classification, Summarization, Structured extraction,
-    Templates, Reasoning, Formal proof, Time-sensitive tasks, Private/internal tasks.
+    Covers 9 observed task families in the pilot benchmark dataset (Arithmetic, Unit conversion,
+    Classification, Summarization, Structured extraction, Templates, Reasoning, Time-sensitive tasks,
+    Private/internal tasks). Formal proof is defined in the routing taxonomy as a reserved category
+    for theorem/deduction verification, with zero empirical items in the current pilot splits.
     """
 
     a_by_item = {log["item_id"]: log for log in sys_a_logs}

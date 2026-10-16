@@ -105,8 +105,9 @@ InferPath supports pluggable routing strategies implementing the unified `BaseRo
    - Enforces cost ceilings (`maximum_cost_usd` / $B_{\max}$) and latency ceilings (`maximum_latency_ms` / $L_{\max}$).
    - Optimizes the Lagrangian objective $\text{Cost}(t) + \lambda \cdot \text{Latency}(t)$ among all candidate tiers satisfying constraints.
 5. **`LearnedRouter`**:
+   - Proof-of-concept learned baseline evaluated on a synthetic calibration corpus.
    - 4-class `RandomForestClassifier` trained on query structural features (length, word count, digit ratios, punctuation, math symbols, JSON syntax).
-   - Deterministic seed (`random_state=42`) with sub-millisecond inference overhead ($<2$ ms).
+   - Deterministic seed (`random_state=42`) with sub-millisecond inference overhead ($<2$ ms), demonstrating statistical pattern reproduction on synthetic data without hard constraint guarantees.
 
 ### 2.3 Asynchronous Exact-Response Cache Engine (`inferpath.cache`)
 - **Canonical Key Builder** (`inferpath.cache.key_builder.CanonicalKeyBuilder`):

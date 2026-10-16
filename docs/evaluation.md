@@ -17,9 +17,9 @@ The evaluation rigorously tests five candidate routing architectures (**System A
 
 1. **Inference Cost**: InferPath (System C) achieved an **84.9% cost reduction** compared to the Large-Model Baseline (System A) ($0.00410 vs $0.02720 per batch), and a **79.5% cost reduction** compared to the Cache + Rules + Large baseline (System B) ($0.00410 vs $0.02000).
 2. **Quality & Correctness Under Privacy Enforcement**: System C achieved a **63.1% quality pass rate** on the overall dev dataset, and **76.5%** on public items. The remaining 17.5% of items are internal or confidential queries intentionally intercepted by Stage 1 privacy guardrails (HTTP 403 Privacy Violation), demonstrating zero unintended data leakage.
-3. **Latency**: System C delivered a **3.4× reduction in mean latency** compared to System A (26.7 ms vs 89.5 ms) and a **2.5× reduction** compared to System B (26.7 ms vs 67.2 ms).
+3. **Latency**: System C delivered a **70.2% reduction in mean latency** (from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup) compared to System A, and a **60.3% reduction** compared to System B (26.7 ms vs 67.2 ms, 2.5× speedup).
 4. **Environmental Footprint**: Under explicit datacenter energy and water boundaries, System C reduced electricity consumption by **84.2%** (1.862 Wh vs 11.811 Wh) and operational water footprint by **84.2%** (4.468 mL vs 28.347 mL).
-5. **Learned vs. Constraint Routing**: While the machine-learned router (`System_Learned`) makes fast statistical classifications, the constraint-aware router (`System_C`) guarantees deterministic adherence to caller-specified quality ($Q_{\min}$), budget ($B_{\max}$), and latency ($L_{\max}$) ceilings.
+5. **Learned vs. Constraint Routing**: While the machine-learned router (`System_Learned`) acts as a proof-of-concept classifier evaluated on a synthetic calibration corpus, the constraint-aware router (`System_C`) guarantees deterministic adherence to caller-specified quality ($Q_{\min}$), budget ($B_{\max}$), and latency ($L_{\max}$) ceilings.
 
 ---
 
@@ -44,9 +44,9 @@ The evaluation rigorously tests five candidate routing architectures (**System A
 ### RQ3: Is Output Quality and Correctness Maintained?
 
 **Verdict: NO (Research Trade-Off Identified).**
-- InferPath does **not** claim uncompromised quality parity with Always-Large. Instead, it exposes a legitimate multi-objective engineering trade-off: an **84.9% cost reduction** and **3.4× latency reduction** accompanied by a measurable **6.3% quality decrease** (63.1% vs 69.4% overall pass rate, and 76.5% vs 84.1% on public items; 95% bootstrap CI `[-10.6%, -3.1%]`).
-- **Human Review Study & Rubric**: Multi-rater evaluation with dual independent reviewers on 30 stratified items (60 candidate responses) applying a 5-point rubric (`EVALUATION_RUBRIC_5_POINT`) yielded quadratic weighted Cohen's $\kappa = 0.859$ `[MEASURED]`, establishing strong inter-rater consensus.
-- **Automated Judge Calibration**: Alignment between consensus human ratings and automated judge scores yielded $\kappa = 0.415$ `[MEASURED]`, indicating moderate positive correlation with the automated judge applying stricter penalization to default mock fallbacks.
+- InferPath does **not** claim uncompromised quality parity with Always-Large. Instead, it exposes a legitimate multi-objective engineering trade-off: an **84.9% cost reduction** and **70.2% latency reduction** (from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup) accompanied by a measurable **6.3% quality decrease** (63.1% vs 69.4% overall pass rate, and 76.5% vs 84.1% on public items; 95% bootstrap CI `[-10.6%, -3.1%]`).
+- **Human Review Study & Rubric**: A pilot dual-annotator study on 30 stratified items (60 candidate responses) applying a 5-point rubric (`EVALUATION_RUBRIC_5_POINT`) yielded quadratic weighted Cohen's $\kappa = 0.859$ `[MEASURED]`, establishing strong inter-rater consensus among human evaluators.
+- **Automated Judge Calibration**: Alignment between consensus human ratings and automated judge scores yielded $\kappa = 0.415$ `[MEASURED]`, indicating moderate alignment and demonstrating that automated judge scores serve as an auxiliary metric rather than ground truth.
 
 ### RQ4: Is InferPath Environmentally More Sustainable?
 
@@ -122,6 +122,9 @@ Evaluation applied a validated 5-point rubric:
 | 2.0x | $0.008134 |
 
 ### 3.4 Held-Out Evaluation Benchmark (`test` split, 3 repeats)
+
+> [!WARNING]
+> **Mock-Coverage & Distribution Diagnostics (`test` split)**: Held-out simulated evaluation exposed substantial distribution and mock-coverage failure (mock adapter coverage rate: ~8.1%, with 147 unrecognized mock completions defaulting to generic fallbacks). Consequently, the test-split simulated pass rates (System A: 2.5%, System C: 9.4%) reflect mock adapter keyword omission rather than generalized LLM routing capability. This evaluation is preserved for diagnostic transparency, not as evidence of model generalization.
 
 | System | Quality_Pass_Rate | Quality_95_CI | Total_Cost_USD | Cost_Reduction_vs_A | Avg_Latency_ms | Energy_Wh |
 | --- | --- | --- | --- | --- | --- | --- |

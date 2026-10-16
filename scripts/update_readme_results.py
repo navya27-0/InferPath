@@ -113,9 +113,9 @@ def generate_results_markdown() -> str:
         "> [!IMPORTANT]\n"
         "> **Research Trade-Off Analysis**: Rather than asserting uncompromised quality parity, "
         "InferPath explores the multi-tier cost-latency-quality trade-off space. Under this benchmark workload, "
-        "full InferPath (System C) achieves an **84.9% cost reduction** and **42.9% latency reduction** "
-        "relative to the Always-Large baseline (System A), with a measured quality pass rate decrease "
-        "from 69.4% to 63.1% ($\\Delta Q = -6.3\\%$)."
+        "full InferPath (System C) achieves an **84.9% cost reduction** and **70.2% latency reduction** "
+        "(from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup) relative to the Always-Large baseline (System A), "
+        "with a measured quality pass rate decrease from 69.4% to 63.1% ($\\Delta Q = -6.3\\%$)."
     )
     lines.append("")
     lines.append(
@@ -175,8 +175,10 @@ def generate_results_markdown() -> str:
         hj_kappa = meta.get("human_judge_kappa")
         if hh_kappa is not None:
             lines.append(
-                f"- **Inter-Rater Agreement**: Human-Human Quadratic $\\kappa = {hh_kappa:.3f}$ `[MEASURED]`, "
-                f"Human-Judge $\\kappa = {hj_kappa:.3f}$ `[MEASURED]` (dual-annotator study, 5-point rubric)  \n"
+                f"- **Inter-Rater Agreement**: A pilot dual-annotator study achieved strong agreement "
+                f"(Human-Human Quadratic $\\kappa = {hh_kappa:.3f}$ `[MEASURED]`), while automated-judge "
+                f"agreement was moderate (Human-Judge $\\kappa = {hj_kappa:.3f}$ `[MEASURED]`), indicating "
+                f"automated judge scores serve as an auxiliary metric rather than ground truth.  \n"
             )
         else:
             lines.append(
@@ -197,12 +199,20 @@ def generate_results_markdown() -> str:
         # 3. Held-Out Test Split if available
         test_summary = load_benchmark_summary(RESULTS_DIR, "simulated_test")
         if test_summary and "table_rows" in test_summary:
+            test_meta = test_summary.get("metadata", {})
+            test_mock_cov = test_meta.get("mock_coverage_rate", 0.081)
+            test_unrec = test_meta.get("unrecognized_mock_prompt_count", 147)
             lines.append("")
             lines.append("### Held-Out Evaluation Benchmark (`test` split, 3 repeats)")
             lines.append("")
             lines.append(
-                "Evaluation on the held-out 160-item `test` split (strictly isolated task families, "
-                "zero prompt leakage from `dev`):"
+                "> [!WARNING]\n"
+                "> **Mock-Coverage & Distribution Diagnostics (`test` split)**: Held-out simulated evaluation "
+                f"exposed substantial distribution and mock-coverage failure (mock adapter coverage rate: "
+                f"`{test_mock_cov * 100:.1f}%`, with `{test_unrec}` unrecognized mock completions defaulting to "
+                "generic fallbacks). Consequently, the test-split simulated pass rates (System A: 2.5%, System C: 9.4%) "
+                "reflect mock adapter keyword omission rather than generalized LLM routing capability. "
+                "This evaluation is retained for diagnostic provenance, not as evidence of model generalization."
             )
             lines.append("")
             lines.append(
