@@ -146,9 +146,11 @@ curl -s -X POST http://127.0.0.1:8000/v1/respond \
 
 ## 4. Evaluation Results
 
-The evaluation artifacts under `data/results/` are organized into three distinct tiers to uphold empirical reproducibility and experimental integrity:
+The evaluation artifacts under `data/results/` are organized into distinct categories to uphold empirical reproducibility and experimental integrity:
 
-- **`data/results/simulated/`**: Full offline benchmark runs, parameter ablations, and item-level logs produced with deterministic mock adapters across the development (`dev`) and held-out (`test`) dataset splits.
+- **`data/results/simulated/`**: Full offline benchmark runs, parameter ablations, and item-level logs produced with deterministic mock adapters across the development (`dev`) split.
+- **`data/results/simulated_test/`**: Diagnostic held-out (`test`) split runs evaluating mock adapter coverage and task family generalization.
+- **`data/results/benchmarks/`**: Real ASGI system-level concurrency, throughput (RPS), and latency distribution benchmarks across worker pools.
 - **`data/results/fixtures/`**: Static synthetic reference fixtures conforming to schema protocols, used exclusively for hermetic offline unit tests, regression suites, and CI validation without network dependencies.
 - **`data/results/real/`**: Reserved exclusively for genuine, measured empirical evaluation runs against live commercial model endpoints (e.g., OpenRouter API) recorded with frozen timestamps, network call latencies, and token expenditures. Synthetic fixtures are strictly prohibited in this directory.
 
@@ -286,6 +288,7 @@ InferPath/
 │   ├── logs/                         # Structured JSONL telemetry logs
 │   ├── pilot_dataset.json            # 320-item balanced evaluation dataset (80 task families)
 │   └── results/
+│       ├── benchmarks/               # System-level ASGI concurrency and throughput metrics
 │       ├── fixtures/                 # Hermetic schema fixtures for offline CI/test validation
 │       ├── real/                     # Reserved exclusively for genuine measured live runs
 │       ├── simulated/                # Benchmark manifests, summaries, and dev ablation logs

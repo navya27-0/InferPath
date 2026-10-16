@@ -88,6 +88,7 @@ def check_result_artifacts() -> list[str]:
         REPO_ROOT / "data" / "results" / "fixtures" / "fixture_pilot_summary.json",
         REPO_ROOT / "data" / "results" / "fixtures" / "manifest_run_fixture_evaluation.json",
         REPO_ROOT / "data" / "results" / "fixtures" / "benchmark_summary.md",
+        REPO_ROOT / "data" / "results" / "benchmarks" / "concurrency_benchmark.json",
     ]
 
     for p in required_files:
