@@ -19,7 +19,7 @@ from inferpath.security.secret_manager import (
     MockSecretProvider,
     SecretManager,
 )
-from inferpath.services.rate_limiter import RateLimiter
+from inferpath.services.rate_limiter import DistributedRateLimiter, RateLimiter
 from inferpath.telemetry.structured_logging import (
     StructuredJsonFormatter,
     configure_structured_logging,
@@ -202,3 +202,139 @@ def test_tracing_disabled_profile_omits_trace_headers():
     assert res.status_code == 200
     assert "X-Trace-Id" not in res.headers
     assert "traceparent" not in res.headers
+
+
+def test_production_secret_loading_end_to_end(tmp_path: Path, monkeypatch):
+    """Verify that credentials supplied through mounted secret files propagate into RequestPipeline."""
+    from inferpath.handlers.openrouter_adapter import OpenRouterAdapter
+    from inferpath.pipeline import RequestPipeline
+    from inferpath.security.secret_manager import GLOBAL_SECRET_MANAGER
+
+    # Ensure no environment variables contaminate secret resolution
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("INFERPATH_OPENROUTER_API_KEY", raising=False)
+
+    # Set up mounted secret file
+    secret_dir = tmp_path / "k8s_secrets"
+    secret_dir.mkdir()
+    secret_file = secret_dir / "openrouter_api_key"
+    secret_file.write_text("sk-or-v1-mounted-secret-test-key", encoding="utf-8")
+
+    # Reconfigure GLOBAL_SECRET_MANAGER with the file provider
+    orig_providers = GLOBAL_SECRET_MANAGER.providers
+    GLOBAL_SECRET_MANAGER.clear_cache()
+    GLOBAL_SECRET_MANAGER.providers = [
+        FileSecretProvider(secrets_dir=secret_dir),
+        EnvironmentSecretProvider(),
+    ]
+
+    try:
+        # Pipeline in real mode should read secret from GLOBAL_SECRET_MANAGER
+        pipeline = RequestPipeline(adapter_mode="real", allow_mock_fallback=False)
+        assert pipeline.settings.openrouter.api_key == "sk-or-v1-mounted-secret-test-key"
+        assert isinstance(pipeline.small_adapter, OpenRouterAdapter)
+        assert isinstance(pipeline.large_adapter, OpenRouterAdapter)
+        assert pipeline.small_adapter.api_key == "sk-or-v1-mounted-secret-test-key"
+
+        # FastAPI app creation under production profile succeeds without error
+        app = create_app(deployment_mode="production", api_key="test-api-key")
+        assert app.state.deployment_profile.name == ProfileName.PRODUCTION
+    finally:
+        GLOBAL_SECRET_MANAGER.providers = orig_providers
+        GLOBAL_SECRET_MANAGER.clear_cache()
+
+
+def test_adapter_mode_strict_selection_rules(monkeypatch):
+    """Verify adapter mode selection strictly adheres to mode, credentials, and fallback settings."""
+    from inferpath.handlers.mock_adapter import MockLargeModel, MockSmallModel
+    from inferpath.pipeline import PipelineExecutionError, RequestPipeline
+    from inferpath.security.secret_manager import GLOBAL_SECRET_MANAGER
+
+    # 1. simulated mode: ALWAYS mock even if API key exists
+    pipeline_sim = RequestPipeline(adapter_mode="simulated")
+    pipeline_sim.settings.openrouter.api_key = "sk-or-dummy-key"
+    adapter_s = pipeline_sim._create_small_adapter()
+    adapter_l = pipeline_sim._create_large_adapter()
+    assert isinstance(adapter_s, MockSmallModel)
+    assert isinstance(adapter_l, MockLargeModel)
+
+    # 2. fixture mode: ALWAYS mock even if API key exists
+    pipeline_fix = RequestPipeline(adapter_mode="fixture")
+    pipeline_fix.settings.openrouter.api_key = "sk-or-dummy-key"
+    assert isinstance(pipeline_fix._create_small_adapter(), MockSmallModel)
+    assert isinstance(pipeline_fix._create_large_adapter(), MockLargeModel)
+
+    # 3. real mode without credentials and allow_mock_fallback=False raises error
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    GLOBAL_SECRET_MANAGER.clear_cache()
+    with pytest.raises(PipelineExecutionError, match="requires OPENROUTER_API_KEY"):
+        RequestPipeline(adapter_mode="real", allow_mock_fallback=False)
+
+    # 4. real mode without credentials but allow_mock_fallback=True uses mock
+    pipeline_real_fallback = RequestPipeline(adapter_mode="real", allow_mock_fallback=True)
+    pipeline_real_fallback.settings.openrouter.api_key = ""
+    assert isinstance(pipeline_real_fallback._create_small_adapter(), MockSmallModel)
+    assert isinstance(pipeline_real_fallback._create_large_adapter(), MockLargeModel)
+
+
+def test_distributed_rate_limiter_contract():
+    """Verify DistributedRateLimiter fallback and mocked redis pipeline behaviors."""
+    # Fallback to local in-memory when redis_client is None
+    dist_limiter = DistributedRateLimiter(requests_per_minute=2)
+    assert dist_limiter.is_allowed("client_x") is True
+    assert dist_limiter.is_allowed("client_x") is True
+    assert dist_limiter.is_allowed("client_x") is False
+
+    dist_limiter.reset()
+    assert dist_limiter.is_allowed("client_x") is True
+
+    # Mock Redis client execution
+    class MockRedisPipeline:
+        def __init__(self, parent):
+            self.parent = parent
+            self._ops = []
+
+        def zremrangebyscore(self, key, min_s, max_s):
+            self._ops.append(("rem", key, min_s, max_s))
+            return self
+
+        def zcard(self, key):
+            self._ops.append(("card", key))
+            return self
+
+        def zadd(self, key, mapping):
+            self._ops.append(("add", key, mapping))
+            return self
+
+        def expire(self, key, seconds):
+            self._ops.append(("expire", key, seconds))
+            return self
+
+        def execute(self):
+            # Return tuple: (rem_result, card_count, add_result, expire_result)
+            return (0, self.parent.simulated_count, 1, True)
+
+    class MockRedisClient:
+        def __init__(self):
+            self.simulated_count = 1
+
+        def pipeline(self):
+            return MockRedisPipeline(self)
+
+        def keys(self, pattern):
+            return ["inferpath:ratelimit:client_y"]
+
+        def delete(self, *keys):
+            return len(keys)
+
+    mock_client = MockRedisClient()
+    redis_limiter = DistributedRateLimiter(redis_client=mock_client, requests_per_minute=5)
+    # Count 1 < 5 -> allowed
+    assert redis_limiter.is_allowed("client_y") is True
+
+    # Count 5 >= 5 -> rejected
+    mock_client.simulated_count = 5
+    assert redis_limiter.is_allowed("client_y") is False
+
+    # Reset calls delete
+    redis_limiter.reset()

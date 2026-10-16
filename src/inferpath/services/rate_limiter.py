@@ -1,10 +1,23 @@
-"""Shared production rate limiter service for InferPath API and routing pipelines."""
+"""Shared rate limiter service for InferPath API and routing pipelines.
+
+Architectural Scope & Horizontal Scalability:
+- Single-Process / Single-Worker Boundary:
+  `RateLimiter` provides in-memory sliding window rate limiting designed for single-process,
+  single-worker deployments, staging nodes, and local development. State is tracked in local
+  memory via thread-safe coarse locks.
+- Horizontal Multi-Worker Scaling:
+  In multi-worker production deployments (e.g. Uvicorn with multiple workers or Kubernetes
+  horizontal pod autoscaling), local process memory is partitioned. To coordinate global
+  rate limits across independent processes, implement or configure `DistributedRateLimiter`
+  backed by an external atomic store (such as Redis or Memcached).
+"""
 
 from __future__ import annotations
 
 import threading
 import time
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class BaseRateLimiter(ABC):
@@ -24,6 +37,9 @@ class BaseRateLimiter(ABC):
 class RateLimiter(BaseRateLimiter):
     """
     In-memory rate limiter using a sliding 60-second window with bounded storage.
+
+    Scope: Single-process and single-worker deployments.
+    For horizontally scaled multi-worker deployments, see `DistributedRateLimiter`.
 
     Features:
     - Thread-safe tracking with coarse locks.
@@ -77,3 +93,63 @@ class RateLimiter(BaseRateLimiter):
                 "max_clients": self.max_clients,
                 "requests_per_minute": self.requests_per_minute,
             }
+
+
+class DistributedRateLimiter(BaseRateLimiter):
+    """
+    Interface and reference contract for distributed rate limiting across horizontal workers.
+
+    Production implementations synchronize state using an external shared store
+    (such as Redis sorted sets or token bucket Lua scripts):
+    - Key: `{key_prefix}{client_id}`
+    - Score: UNIX timestamp in seconds/microseconds
+    - Atomic window: Remove entries older than `now - 60.0`, count remaining entries,
+      and append current timestamp if under quota.
+
+    If no external client is provided or the connection is unavailable, it gracefully
+    falls back to process-local sliding window tracking.
+    """
+
+    def __init__(
+        self,
+        redis_client: Any | None = None,
+        requests_per_minute: int = 120,
+        key_prefix: str = "inferpath:ratelimit:",
+    ):
+        self.redis_client = redis_client
+        self.requests_per_minute = requests_per_minute
+        self.key_prefix = key_prefix
+        self._fallback_limiter = RateLimiter(requests_per_minute=requests_per_minute)
+
+    def is_allowed(self, client_id: str) -> bool:
+        """Determines if request is allowed using distributed backend or fallback."""
+        if self.redis_client is None:
+            return self._fallback_limiter.is_allowed(client_id)
+
+        try:
+            now = time.time()
+            cutoff = now - 60.0
+            key = f"{self.key_prefix}{client_id}"
+            pipe = self.redis_client.pipeline()
+            pipe.zremrangebyscore(key, "-inf", cutoff)
+            pipe.zcard(key)
+            pipe.zadd(key, {str(now): now})
+            pipe.expire(key, 65)
+            _, count, *_ = pipe.execute()
+            return count < self.requests_per_minute
+        except Exception:
+            # Degrade gracefully to process-local tracking on external store failure
+            return self._fallback_limiter.is_allowed(client_id)
+
+    def reset(self) -> None:
+        """Resets all rate limiting state across the distributed store or fallback."""
+        if self.redis_client is None:
+            self._fallback_limiter.reset()
+            return
+
+        try:
+            keys = self.redis_client.keys(f"{self.key_prefix}*")
+            if keys:
+                self.redis_client.delete(*keys)
+        except Exception:
+            self._fallback_limiter.reset()
