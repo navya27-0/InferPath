@@ -93,8 +93,6 @@ def create_app(
         version=__version__,
         description="Resource-aware AI inference routing service",
     )
-    pipeline_instance = pipeline or RequestPipeline()
-
     # Resolve active deployment profile
     active_profile = (
         deployment_profile
@@ -103,6 +101,27 @@ def create_app(
             str(deployment_profile) if deployment_profile else deployment_mode
         )
     )
+
+    if pipeline is not None:
+        pipeline_instance = pipeline
+    else:
+        if active_profile.adapter_mode == "real" and not active_profile.allow_mock_fallback:
+            openrouter_key = GLOBAL_SECRET_MANAGER.get("OPENROUTER_API_KEY", "") or os.getenv(
+                "OPENROUTER_API_KEY", ""
+            )
+            if not openrouter_key:
+                raise RuntimeError(
+                    f"Deployment profile '{active_profile.name.value}' enforces real adapter mode without mock fallback, "
+                    "but OPENROUTER_API_KEY is not configured."
+                )
+        pipeline_instance = RequestPipeline(
+            adapter_mode=active_profile.adapter_mode,
+            allow_mock_fallback=active_profile.allow_mock_fallback,
+        )
+
+    # Store profile on app state for operational inspection
+    app.state.deployment_profile = active_profile
+    app.state.default_bind_host = active_profile.default_bind_host
 
     # Initialize rate limiter with profile defaults if not injected
     limiter = rate_limiter or RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
@@ -241,13 +260,13 @@ def create_app(
             if auth_header.startswith("Bearer "):
                 client_key = auth_header[7:].strip()
 
-        if dep_mode == "protected":
+        if active_profile.require_api_key:
             if not required_api_key or not _constant_time_compare(client_key, required_api_key):
                 raise HTTPException(
                     status_code=401,
                     detail={
                         "error": "Unauthorized",
-                        "detail": "Protected deployment mode requires valid API key authentication.",
+                        "detail": f"Deployment profile '{active_profile.name.value}' requires valid API key authentication.",
                         "code": "UNAUTHORIZED",
                     },
                 )
@@ -423,9 +442,10 @@ def create_app(
             span.set_attribute("inferpath.latency_ms", result.total_latency_ms.value)
             span.set_attribute("inferpath.fallback_used", result.fallback_occurred)
 
-            # Inject trace propagation headers into outgoing response
-            response.headers["X-Trace-Id"] = span.trace_id
-            response.headers["traceparent"] = span.export_w3c_traceparent()
+            # Inject trace propagation headers into outgoing response if tracing is enabled
+            if active_profile.enable_tracing:
+                response.headers["X-Trace-Id"] = span.trace_id
+                response.headers["traceparent"] = span.export_w3c_traceparent()
 
             return RespondResponse(
                 request_id=result.request_id,

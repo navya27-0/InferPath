@@ -34,7 +34,7 @@ def test_manifest_discovery_existing_artifacts():
     # Ensure all manifests have valid run_ids and adapter_mode
     for m in manifests:
         assert m.run_id
-        assert m.adapter_mode in ["simulated", "real", "unknown"]
+        assert m.adapter_mode in ["simulated", "real", "fixture", "unknown"]
         assert m.split in ["dev", "test", "unknown"]
         assert m.manifest_path
 

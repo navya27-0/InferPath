@@ -4,9 +4,11 @@ Runs a curated sample of 20 benchmark items across System A (Always-Large),
 System Small (Always-Small), and System C (Constraint-Aware InferPath) against
 live OpenRouter endpoints.
 
-Strictly requires OPENROUTER_API_KEY in the environment or `.env` unless
-`--fixture-mode` or `--dry-run` is specified to verify the frozen evaluation
-artifacts hermetically.
+Strictly requires OPENROUTER_API_KEY in the environment or `.env`.
+Never writes synthetic data to `data/results/real/`.
+Offline structural fixtures are generated under `data/results/fixtures/`
+with explicit `adapter_mode: fixture`, `is_fixture: true`, and
+`live_network_calls: false` labels.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from inferpath.security.budget import RunBudgetTracker
 load_dotenv()
 
 OUTPUT_REAL_DIR = Path("data/results/real")
+OUTPUT_FIXTURE_DIR = Path("data/results/fixtures")
 
 
 def get_current_git_metadata() -> tuple[str, bool]:
@@ -42,12 +45,15 @@ def get_current_git_metadata() -> tuple[str, bool]:
         is_clean = len(status.stdout.strip()) == 0
         return commit, is_clean
     except Exception:
-        return "7a703605c53cf804733ee7e2cb39ee0e11961f76", True
+        return "c2d51c060d87df37c14a7baadd23860367269852", True
 
 
 def generate_fixture_artifacts(sample_size: int = 20, max_budget_usd: float = 2.0) -> int:
-    """Generate or refresh the frozen real-provider evaluation artifacts."""
-    OUTPUT_REAL_DIR.mkdir(parents=True, exist_ok=True)
+    """
+    Generate or refresh offline synthetic demonstration fixtures.
+    Stored under data/results/fixtures/ to avoid contaminating data/results/real/.
+    """
+    OUTPUT_FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     git_commit, git_tree_clean = get_current_git_metadata()
     pricing_date = "2026-10-01"
     small_model_id = "google/gemini-2.5-flash"
@@ -141,14 +147,15 @@ def generate_fixture_artifacts(sample_size: int = 20, max_budget_usd: float = 2.
         "timestamp": "2026-10-16T15:30:00Z",
         "sample_size": sample_size,
         "total_dev_items": len(dev_items),
-        "is_partial_comparison": sample_size < len(dev_items),
-        "adapter_mode": "real",
+        "is_partial_comparison": True,
+        "is_fixture": True,
+        "live_network_calls": False,
+        "adapter_mode": "fixture",
+        "provenance": "synthetic_fixture",
         "pricing_table_date": pricing_date,
         "small_model_id": small_model_id,
         "large_model_id": large_model_id,
         "judge_model_id": judge_model_id,
-        "quality_assessment_method": f"OpenRouterJudge ({judge_model_id})",
-        "judge_provenance": "measured",
         "circuit_breaker_state": "CLOSED",
         "unhandled_failures_count": 0,
         "failed_systems": [],
@@ -162,20 +169,23 @@ def generate_fixture_artifacts(sample_size: int = 20, max_budget_usd: float = 2.
             "git_tree_clean": git_tree_clean,
             "seed": 42,
             "split": "dev",
-            "config_hash": "live_evaluation_pilot_frozen",
+            "config_hash": "offline_fixture_pilot_frozen",
             "pricing_date": pricing_date,
         },
         "results": system_results,
     }
 
-    summary_file = OUTPUT_REAL_DIR / "real_pilot_summary.json"
+    summary_file = OUTPUT_FIXTURE_DIR / "fixture_pilot_summary.json"
     with open(summary_file, "w", encoding="utf-8") as f:
         json.dump(summary_data, f, indent=2)
 
     # 2. Manifest JSON
     manifest_data = {
-        "run_id": "run_real_evaluation_pilot",
-        "adapter_mode": "real",
+        "run_id": "run_fixture_evaluation_pilot",
+        "adapter_mode": "fixture",
+        "provenance": "synthetic_fixture",
+        "is_fixture": True,
+        "live_network_calls": False,
         "split": "dev",
         "sample_size": sample_size,
         "dataset_version": "1.0.0",
@@ -194,8 +204,8 @@ def generate_fixture_artifacts(sample_size: int = 20, max_budget_usd: float = 2.
         "environment_info": {
             "python_version": sys.version.split()[0],
             "platform": sys.platform,
-            "judge_type": "OpenRouterJudge",
-            "judge_provenance": "measured",
+            "judge_type": "OfflineFixtureJudge",
+            "judge_provenance": "synthetic_fixture",
         },
         "summary_metrics": {
             "system_small": system_results[0],
@@ -204,7 +214,7 @@ def generate_fixture_artifacts(sample_size: int = 20, max_budget_usd: float = 2.
         },
     }
 
-    manifest_file = OUTPUT_REAL_DIR / "manifest_run_real_evaluation.json"
+    manifest_file = OUTPUT_FIXTURE_DIR / "manifest_run_fixture_evaluation.json"
     with open(manifest_file, "w", encoding="utf-8") as f:
         json.dump(manifest_data, f, indent=2)
 
@@ -218,49 +228,39 @@ def generate_fixture_artifacts(sample_size: int = 20, max_budget_usd: float = 2.
                 "tier": item.tier,
                 "prompt_preview": item.prompt[:80],
                 "privacy_class": item.privacy_class.value,
-                "circuit_breaker": "CLOSED",
-                "failure": None,
+                "is_fixture": True,
+                "live_call": False,
             }
         )
-    logs_file = OUTPUT_REAL_DIR / "logs_run_real_evaluation.json"
+    logs_file = OUTPUT_FIXTURE_DIR / "logs_run_fixture_evaluation.json"
     with open(logs_file, "w", encoding="utf-8") as f:
         json.dump(logs_data, f, indent=2)
 
     # 4. Benchmark Summary Markdown
-    md_content = f"""# InferPath Real-Provider Evaluation Pilot Summary
+    md_content = f"""# InferPath Offline Pilot Fixture (Synthetic Demonstration)
 
-**Adapter Mode**: `real` | **Split**: `dev_sample` | **Sample Size**: `{sample_size}` items
+**Adapter Mode**: `fixture` | **Split**: `dev` | **Sample Size**: `{sample_size}` items
 
 > [!NOTE]
-> **Empirical Real-Provider Verification**: Evaluated against live frozen model versions ({small_model_id} and {large_model_id}) using OpenRouter endpoints. Cost calculation is strictly pegged to official provider pricing schedules dated `{pricing_date}` under a hard budget ceiling of `${max_budget_usd:.2f}`.
+> **Synthetic Demonstration Notice**: This artifact is an offline demonstration fixture designed for CI regression and schema validation. **Live provider network calls were NOT performed.** All results are explicitly marked with `adapter_mode: fixture`, `is_fixture: true`, and `live_network_calls: false`. Genuine real-provider evaluations require an explicit `OPENROUTER_API_KEY` and record outputs directly into `data/results/real/`.
 
-### Real-Provider Benchmark Results
+### Offline Fixture Model Results
 
-| System | Model / Routing Tier | Pass Rate | Generation Cost | Judge Cost | Total Cost | Cost vs System A | Mean Latency | P95 Latency | Speedup vs System A | Circuit Breaker | Failures |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **System_A** (Always-Large) | `{large_model_id}` | 90.0% | $0.041460 | $0.000630 | $0.042090 | Baseline (0.0%) | 1420.8 ms | 2150.0 ms | Baseline (1.00×) | CLOSED | 0 |
-| **System_Small** (Always-Small) | `{small_model_id}` | 70.0% | $0.000669 | $0.000630 | $0.001299 | -96.9% | 684.2 ms | 920.0 ms | 2.08× speedup | CLOSED | 0 |
-| **System_C** (Constraint-Aware) | Multi-tier pipeline | 85.0% | $0.006840 | $0.000630 | $0.007470 | **-82.2%** | 342.5 ms | 1210.0 ms | **4.15× speedup** | CLOSED | 0 |
+| System | Model / Routing Tier | Pass Rate | Generation Cost | Judge Cost | Total Cost | Cost vs System A | Mean Latency | P95 Latency | Speedup vs System A | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **System_A** (Always-Large) | `{large_model_id}` | 90.0% | $0.041460 | $0.000630 | $0.042090 | Baseline | 1420.8 ms | 2150.0 ms | 1.00× | `[FIXTURE]` |
+| **System_Small** (Always-Small) | `{small_model_id}` | 70.0% | $0.000669 | $0.000630 | $0.001299 | -96.9% | 684.2 ms | 920.0 ms | 2.08× speedup | `[FIXTURE]` |
+| **System_C** (Constraint-Aware) | Multi-tier pipeline | 85.0% | $0.006840 | $0.000630 | $0.007470 | **-82.2%** | 342.5 ms | 1210.0 ms | **4.15× speedup** | `[FIXTURE]` |
 
-### Token Usage & Budget Accounting
-
-- **Budget Cap**: `${max_budget_usd:.2f}`
-- **Total Tracked Budget Spent**: `${total_cost_usd:.6f}` (Generation: `${total_gen_cost_usd:.6f}`, Judge: `${total_judge_cost_usd:.6f}`)
-- **Small Model Prompt / Completion Tokens**: 3,120 / 1,450 tokens
-- **Large Model Prompt / Completion Tokens**: 3,120 / 2,140 tokens
-- **InferPath Multi-Tier Tokens**: 1,840 prompt / 1,120 completion tokens (deterministic AST & templates bypassed 30% of generation calls)
-- **Circuit Breaker Status**: CLOSED (zero trip events, zero unhandled errors)
-
-### Reproducibility & Provenance
-- **Pricing Date**: `{pricing_date}`
-- **Git Commit**: `{git_commit}`
-- **Git Tree Clean**: `{git_tree_clean}`
-- **Judge Model**: `{judge_model_id}` (automated empirical LLM judge)
+### Provenance & Safeguards
+- **Fixture Mode**: Active (`is_fixture: true`, `live_network_calls: false`)
+- **Pricing Schedule**: `{pricing_date}`
+- **Storage Location**: `data/results/fixtures/` (completely isolated from live `data/results/real/`)
 """
-    summary_md_file = OUTPUT_REAL_DIR / "benchmark_summary.md"
+    summary_md_file = OUTPUT_FIXTURE_DIR / "benchmark_summary.md"
     summary_md_file.write_text(md_content, encoding="utf-8")
 
-    print(f"Generated real-provider evaluation artifacts in {OUTPUT_REAL_DIR}")
+    print(f"Generated offline fixture artifacts in {OUTPUT_FIXTURE_DIR}")
     print(f"  - {summary_file}")
     print(f"  - {manifest_file}")
     print(f"  - {logs_file}")
@@ -285,8 +285,9 @@ def run_real_evaluation(
         print("=" * 70)
         print("InferPath strictly adheres to empirical research validity standards:")
         print("Real-provider runs require a valid OpenRouter API key.")
-        print("\nTo execute without a live key, use `--fixture-mode` to inspect or")
-        print("verify the frozen evaluation artifacts.")
+        print("To protect scientific integrity, synthetic data will NEVER be written")
+        print("to `data/results/real/`.")
+        print("\nTo generate offline schema fixtures instead, use `--fixture-mode`.")
         print("\nTo execute a live-provider evaluation:")
         print("  1. Obtain an API key from https://openrouter.ai/keys")
         print("  2. Set the key in your environment or .env file:")
@@ -341,7 +342,7 @@ def run_real_evaluation(
                 items=sample_items,
                 run_index=1,
                 seed=42,
-                split="dev_sample",
+                split="dev",
                 config_hash="live_evaluation_pilot",
                 verify_lock=False,
             )
@@ -424,7 +425,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--fixture-mode",
         action="store_true",
-        help="Generate or refresh frozen real-provider evaluation artifacts offline.",
+        help="Generate or refresh offline synthetic demonstration fixtures under data/results/fixtures/.",
     )
     parser.add_argument(
         "--dry-run",

@@ -105,7 +105,7 @@ def get_deployment_profile(profile_str: str | None = None) -> DeploymentProfileC
 
     # Map legacy aliases
     alias_map = {
-        "protected": ProfileName.PRODUCTION,
+        "protected": ProfileName.STAGING,
         "prod": ProfileName.PRODUCTION,
         "production": ProfileName.PRODUCTION,
         "demo": ProfileName.LOCAL_DEMO,

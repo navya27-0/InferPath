@@ -5,6 +5,7 @@ import logging
 import os
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from inferpath.api.main import create_app
@@ -159,3 +160,45 @@ def test_api_tracing_headers_in_response():
     assert len(response.headers["X-Trace-Id"]) == 32
     assert "traceparent" in response.headers
     assert response.headers["traceparent"].startswith("00-")
+
+    # App state inspection
+    assert app.state.deployment_profile.name == ProfileName.LOCAL_DEMO
+    assert app.state.default_bind_host == "127.0.0.1"
+
+
+def test_production_profile_fails_startup_without_real_credentials(monkeypatch):
+    """Production profile disallowing mock fallback must fail startup when OPENROUTER_API_KEY is missing."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="enforces real adapter mode"):
+        create_app(deployment_mode="production")
+
+
+def test_production_profile_strictly_requires_api_key_authentication():
+    """In production mode with no API key configured, all requests must be rejected with 401."""
+    # When injected with a mock pipeline, app initializes but rejects unauthenticated calls
+    from inferpath.config.settings import load_pricing_table
+    from inferpath.pipeline import RequestPipeline
+
+    pipeline = RequestPipeline(pricing_table=load_pricing_table())
+    app = create_app(pipeline=pipeline, deployment_mode="production", api_key="")
+    client = TestClient(app)
+
+    res = client.post("/v1/respond", json={"prompt": "125 * 8"})
+    assert res.status_code == 401
+    assert res.json()["code"] == "UNAUTHORIZED"
+    assert "requires valid API key authentication" in res.json()["detail"]
+
+
+def test_tracing_disabled_profile_omits_trace_headers():
+    """When a profile has enable_tracing=False, response headers must not include trace IDs."""
+    from inferpath.config.settings import load_pricing_table
+    from inferpath.pipeline import RequestPipeline
+
+    pipeline = RequestPipeline(pricing_table=load_pricing_table())
+    app = create_app(pipeline=pipeline, deployment_mode="benchmark-offline")
+    client = TestClient(app)
+
+    res = client.post("/v1/respond", json={"prompt": "125 * 8"})
+    assert res.status_code == 200
+    assert "X-Trace-Id" not in res.headers
+    assert "traceparent" not in res.headers

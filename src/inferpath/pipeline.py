@@ -63,9 +63,22 @@ class RequestPipeline:
         logger: ExperimentLogger | None = None,
         budget_tracker: RunBudgetTracker | None = None,
         estimator: EnvironmentalEstimator | None = None,
+        adapter_mode: str | None = None,
+        allow_mock_fallback: bool | None = None,
     ):
         self.settings = settings or load_settings()
         self.pricing_table = pricing_table or load_pricing_table()
+        self.adapter_mode = adapter_mode
+        self.allow_mock_fallback = allow_mock_fallback if allow_mock_fallback is not None else True
+        if (
+            self.adapter_mode == "real"
+            and not self.allow_mock_fallback
+            and not self.settings.openrouter.api_key
+        ):
+            raise PipelineExecutionError(
+                "Pipeline configured with adapter_mode='real' and allow_mock_fallback=False "
+                "requires OPENROUTER_API_KEY, but no credentials were found."
+            )
         self.privacy_enforcer = PrivacyPolicyEnforcer()
         self.logger = logger or ExperimentLogger()
         self.router = router or RuleBasedRouter(

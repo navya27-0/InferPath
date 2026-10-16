@@ -1,6 +1,9 @@
 {
-  "run_id": "run_real_evaluation_pilot",
-  "adapter_mode": "real",
+  "run_id": "run_fixture_evaluation_pilot",
+  "adapter_mode": "fixture",
+  "provenance": "synthetic_fixture",
+  "is_fixture": true,
+  "live_network_calls": false,
   "split": "dev",
   "sample_size": 20,
   "dataset_version": "1.0.0",
@@ -9,8 +12,8 @@
   "budget_spent_usd": 0.050859,
   "circuit_breaker_state": "CLOSED",
   "unhandled_failures": 0,
-  "git_commit": "90a1e061ee5bc7190d1786f474db7123b62fb553",
-  "git_tree_clean": true,
+  "git_commit": "4277d23fb4acb503bd14ed4a95acc206b797d54a",
+  "git_tree_clean": false,
   "models": {
     "small_model": "google/gemini-2.5-flash",
     "large_model": "anthropic/claude-3.7-sonnet",
@@ -19,8 +22,8 @@
   "environment_info": {
     "python_version": "3.11.15",
     "platform": "win32",
-    "judge_type": "OpenRouterJudge",
-    "judge_provenance": "measured"
+    "judge_type": "OfflineFixtureJudge",
+    "judge_provenance": "synthetic_fixture"
   },
   "summary_metrics": {
     "system_small": {

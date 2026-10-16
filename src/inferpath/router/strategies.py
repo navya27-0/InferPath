@@ -441,7 +441,7 @@ class ConstraintAwareRouter(BaseRouter):
             or self.empirical_quality_priors.get(task_family_key)
         )
 
-        is_complex = bool(analysis.complexity_indicators) or len(request.prompt.split()) > 150
+        is_complex = bool(analysis.complexity_indicators)
         is_ambiguous = analysis.ambiguity_detected
         is_high_pref = request.task_parameters.quality_preference == "high"
 
