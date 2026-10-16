@@ -289,7 +289,6 @@ InferPath/
 │   ├── evaluation.md                 # Empirical findings & 4-pillar evidence report
 │   ├── methodology_and_assumptions.md# Resource estimation equations & coefficients
 │   ├── real_vs_simulated_gap.md      # Live provider vs offline simulation gap audit
-│   ├── resume_and_interview_guide.md # STAR interview guide & role-specific bullet points
 │   ├── routing_rules.md              # Rule table, precedence, and regex triggers
 │   └── threats_to_validity.md        # Comprehensive experimental validity critique
 ├── scripts/
@@ -329,16 +328,3 @@ InferPath/
 4. **Counterfactual Quality Bounds**: Counterfactual Always-Large comparisons compute economic cost based on token counts and the dated pricing schedule (`2026-10-01`). Unexecuted models cannot be graded for quality or latency without executing live requests.
 5. **Heuristic Output Validation**: Deterministic output validators rely on structural schemas, regex, and non-empty checks. Semantic hallucination detection on open-ended creative tasks requires human or LLM judge grading.
 
----
-
-## 8. Professional Resume & Portfolio Framing
-
-When describing InferPath in technical portfolios and job interviews, use precise, defensible phrasing grounded in actual system implementation:
-
-> *"Evaluated under reproducible offline simulated workloads: built a privacy-aware, resource-conscious inference routing framework with deterministic routing, exact canonical caching, bounded fallback, and multi-tier optimization across baselines and ablations."*
-
-### Key Talking Points & Deep Dives
-- **Architecture**: 4 discrete execution tiers (AST arithmetic $<1$ ms, Jinja2 templates, ~8B models, ~70B+ models) solving constrained optimization: $\min \text{Cost} + \lambda \cdot \text{Latency}$ subject to $\hat{Q} \ge Q_{\min}$, privacy policies, and caller budgets.
-- **Production-Oriented Prototype**: Stateful **Circuit Breaker** (`CLOSED`/`OPEN`/`HALF_OPEN`) on inference adapters, process-local rate limiting, canonical SHA-256 exact caching with SQLite, and Prometheus `/metrics` export.
-- **Empirical Trade-Off Findings**: Under offline simulated workloads on 160 dev tasks, demonstrated an **84.9% cost reduction** and **70.2% latency reduction** (from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup) with an explicit quality trade-off (63.1% vs 69.4% overall pass rate), validated via a pilot double-blind multi-rater evaluation ($\kappa = 0.859$).
-- **Interview Guide**: See [`docs/resume_and_interview_guide.md`](docs/resume_and_interview_guide.md) for complete STAR-method interview narratives and technical Q&A.
