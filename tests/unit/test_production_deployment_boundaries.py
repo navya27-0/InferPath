@@ -338,3 +338,42 @@ def test_distributed_rate_limiter_contract():
 
     # Reset calls delete
     redis_limiter.reset()
+
+
+def test_adapter_factory_isolation():
+    """Verify AdapterFactory creates mock and real adapters with isolated logic."""
+    from inferpath.config.settings import load_pricing_table, load_settings
+    from inferpath.handlers.factory import AdapterFactory
+    from inferpath.handlers.mock_adapter import MockLargeModel, MockSmallModel
+    from inferpath.handlers.openrouter_adapter import OpenRouterAdapter
+
+    settings = load_settings()
+    pricing = load_pricing_table()
+
+    # 1. simulated mode
+    s_adapter = AdapterFactory.create_small_adapter(settings, pricing, adapter_mode="simulated")
+    l_adapter = AdapterFactory.create_large_adapter(settings, pricing, adapter_mode="simulated")
+    assert isinstance(s_adapter, MockSmallModel)
+    assert isinstance(l_adapter, MockLargeModel)
+
+    # 2. real mode with key
+    settings.openrouter.api_key = "sk-or-test-factory-key"
+    s_real = AdapterFactory.create_small_adapter(settings, pricing, adapter_mode="real")
+    l_real = AdapterFactory.create_large_adapter(settings, pricing, adapter_mode="real")
+    assert isinstance(s_real, OpenRouterAdapter)
+    assert isinstance(l_real, OpenRouterAdapter)
+
+
+def test_create_app_with_distributed_rate_limiter():
+    """Verify create_app integrates seamlessly with DistributedRateLimiter."""
+    dist_limiter = DistributedRateLimiter(requests_per_minute=1)
+    app = create_app(rate_limiter=dist_limiter, deployment_mode="local-demo")
+    client = TestClient(app)
+
+    res1 = client.post("/v1/respond", json={"prompt": "125 * 8"})
+    assert res1.status_code == 200
+
+    # Second call should exceed quota
+    res2 = client.post("/v1/respond", json={"prompt": "125 * 8"})
+    assert res2.status_code == 429
+    assert res2.json()["code"] == "RATE_LIMIT_EXCEEDED"

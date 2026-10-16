@@ -1,5 +1,6 @@
 from inferpath.handlers.calculator import CalculatorError, SafeCalculator
 from inferpath.handlers.date_formatter import DateFormatter, DateFormattingError
+from inferpath.handlers.factory import AdapterFactory
 from inferpath.handlers.json_validator import JSONSchemaValidator, JSONValidationError
 from inferpath.handlers.mock_adapter import (
     MockLargeModel,
@@ -18,6 +19,7 @@ from inferpath.handlers.openrouter_adapter import (
 from inferpath.handlers.unit_converter import UnitConversionError, UnitConverter
 
 __all__ = [
+    "AdapterFactory",
     "ModelAdapter",
     "MockSmallModel",
     "MockLargeModel",

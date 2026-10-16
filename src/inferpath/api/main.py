@@ -21,7 +21,7 @@ from inferpath.security.budget import BudgetExceededError
 from inferpath.security.hashing import scrub_api_keys
 from inferpath.security.privacy import PrivacyViolationError
 from inferpath.security.secret_manager import GLOBAL_SECRET_MANAGER
-from inferpath.services.rate_limiter import RateLimiter
+from inferpath.services.rate_limiter import BaseRateLimiter, DistributedRateLimiter, RateLimiter
 from inferpath.telemetry.metrics import GLOBAL_METRICS
 from inferpath.telemetry.structured_logging import configure_structured_logging, current_request_id
 from inferpath.telemetry.tracing import GLOBAL_TRACER
@@ -81,7 +81,7 @@ def _constant_time_compare(val_a: str | None, val_b: str | None) -> bool:
 
 def create_app(
     pipeline: RequestPipeline | None = None,
-    rate_limiter: RateLimiter | None = None,
+    rate_limiter: BaseRateLimiter | None = None,
     api_key: str | None = None,
     deployment_mode: str | None = None,
     deployment_profile: DeploymentProfileConfig | str | None = None,
@@ -123,8 +123,24 @@ def create_app(
     app.state.deployment_profile = active_profile
     app.state.default_bind_host = active_profile.default_bind_host
 
-    # Initialize rate limiter with profile defaults if not injected
-    limiter = rate_limiter or RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
+    # Initialize rate limiter with injected instance, distributed backend, or profile defaults
+    if rate_limiter is not None:
+        limiter: BaseRateLimiter = rate_limiter
+    else:
+        redis_url = os.getenv("INFERPATH_REDIS_URL") or os.getenv("REDIS_URL")
+        if redis_url:
+            try:
+                import redis
+
+                redis_client = redis.from_url(redis_url)
+                limiter = DistributedRateLimiter(
+                    redis_client=redis_client,
+                    requests_per_minute=active_profile.rate_limit_rpm,
+                )
+            except Exception:
+                limiter = RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
+        else:
+            limiter = RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
 
     # Deployment mode configuration
     dep_mode = deployment_mode if deployment_mode is not None else active_profile.name.value

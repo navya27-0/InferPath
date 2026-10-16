@@ -8,6 +8,7 @@ from inferpath.cache.eligibility import CacheEligibilityPolicy
 from inferpath.cache.exact_cache import ExactCache
 from inferpath.config.settings import PricingTable, Settings, load_pricing_table, load_settings
 from inferpath.evaluation.environmental import EnvironmentalEstimator
+from inferpath.handlers.factory import AdapterFactory
 from inferpath.handlers.mock_adapter import MockLargeModel, MockSmallModel, ModelAdapter
 from inferpath.handlers.openrouter_adapter import OpenRouterAdapter
 from inferpath.models.domain import (
@@ -108,100 +109,50 @@ class RequestPipeline:
         self.large_adapter = large_adapter or self._create_large_adapter()
 
     def _build_mock_small(self) -> MockSmallModel:
-        """Constructs deterministic MockSmallModel with current pricing schedule."""
-        rates = self.pricing_table.rates_per_1m.get(
-            self.settings.openrouter.small_model, {"prompt": 0.075, "completion": 0.30}
-        )
-        return MockSmallModel(
-            model_id=self.settings.openrouter.small_model,
-            prompt_price_per_1m=rates["prompt"],
-            completion_price_per_1m=rates["completion"],
-            simulated_base_latency_ms=120.0,
-            price_table_date=self.pricing_table.effective_date,
-        )
+        """Constructs deterministic MockSmallModel via AdapterFactory."""
+        return AdapterFactory.build_mock_small(self.settings, self.pricing_table)
 
     def _build_openrouter_small(self) -> OpenRouterAdapter:
-        """Constructs live OpenRouterAdapter for small model tier."""
-        return OpenRouterAdapter(
-            model_id=self.settings.openrouter.small_model,
-            pricing_table=self.pricing_table,
-            api_key=self.settings.openrouter.api_key,
-            base_url=self.settings.openrouter.base_url,
-            timeout_seconds=self.settings.openrouter.timeout_seconds,
-            max_retries=self.settings.openrouter.max_retries,
-            budget_tracker=self.budget_tracker,
+        """Constructs live OpenRouterAdapter via AdapterFactory."""
+        return AdapterFactory.build_openrouter_small(
+            self.settings, self.pricing_table, self.budget_tracker
         )
 
     def _build_mock_large(self) -> MockLargeModel:
-        """Constructs deterministic MockLargeModel with current pricing schedule."""
-        rates = self.pricing_table.rates_per_1m.get(
-            self.settings.openrouter.large_model, {"prompt": 3.0, "completion": 15.0}
-        )
-        return MockLargeModel(
-            model_id=self.settings.openrouter.large_model,
-            prompt_price_per_1m=rates["prompt"],
-            completion_price_per_1m=rates["completion"],
-            simulated_base_latency_ms=450.0,
-            price_table_date=self.pricing_table.effective_date,
-        )
+        """Constructs deterministic MockLargeModel via AdapterFactory."""
+        return AdapterFactory.build_mock_large(self.settings, self.pricing_table)
 
     def _build_openrouter_large(self) -> OpenRouterAdapter:
-        """Constructs live OpenRouterAdapter for large model tier."""
-        return OpenRouterAdapter(
-            model_id=self.settings.openrouter.large_model,
-            pricing_table=self.pricing_table,
-            api_key=self.settings.openrouter.api_key,
-            base_url=self.settings.openrouter.base_url,
-            timeout_seconds=self.settings.openrouter.timeout_seconds,
-            max_retries=self.settings.openrouter.max_retries,
-            budget_tracker=self.budget_tracker,
+        """Constructs live OpenRouterAdapter via AdapterFactory."""
+        return AdapterFactory.build_openrouter_large(
+            self.settings, self.pricing_table, self.budget_tracker
         )
 
     def _create_small_adapter(self) -> ModelAdapter:
-        """
-        Creates small model adapter explicitly based on adapter_mode,
-        allow_mock_fallback, and credential availability.
-        """
-        has_key = bool(self.settings.openrouter.api_key)
-        if self.adapter_mode in ("simulated", "fixture"):
-            return self._build_mock_small()
-
-        if self.adapter_mode == "real":
-            if has_key:
-                return self._build_openrouter_small()
-            if self.allow_mock_fallback:
-                return self._build_mock_small()
-            raise PipelineExecutionError(
-                "adapter_mode is 'real' and allow_mock_fallback=False, but no OpenRouter API key is available."
+        """Creates small model adapter explicitly based on mode, credentials, and fallback policy."""
+        try:
+            return AdapterFactory.create_small_adapter(
+                settings=self.settings,
+                pricing_table=self.pricing_table,
+                budget_tracker=self.budget_tracker,
+                adapter_mode=self.adapter_mode,
+                allow_mock_fallback=self.allow_mock_fallback,
             )
-
-        # Default / auto mode: use real if credentials exist, otherwise mock
-        if has_key:
-            return self._build_openrouter_small()
-        return self._build_mock_small()
+        except RuntimeError as e:
+            raise PipelineExecutionError(str(e)) from e
 
     def _create_large_adapter(self) -> ModelAdapter:
-        """
-        Creates large model adapter explicitly based on adapter_mode,
-        allow_mock_fallback, and credential availability.
-        """
-        has_key = bool(self.settings.openrouter.api_key)
-        if self.adapter_mode in ("simulated", "fixture"):
-            return self._build_mock_large()
-
-        if self.adapter_mode == "real":
-            if has_key:
-                return self._build_openrouter_large()
-            if self.allow_mock_fallback:
-                return self._build_mock_large()
-            raise PipelineExecutionError(
-                "adapter_mode is 'real' and allow_mock_fallback=False, but no OpenRouter API key is available."
+        """Creates large model adapter explicitly based on mode, credentials, and fallback policy."""
+        try:
+            return AdapterFactory.create_large_adapter(
+                settings=self.settings,
+                pricing_table=self.pricing_table,
+                budget_tracker=self.budget_tracker,
+                adapter_mode=self.adapter_mode,
+                allow_mock_fallback=self.allow_mock_fallback,
             )
-
-        # Default / auto mode: use real if credentials exist, otherwise mock
-        if has_key:
-            return self._build_openrouter_large()
-        return self._build_mock_large()
+        except RuntimeError as e:
+            raise PipelineExecutionError(str(e)) from e
 
     def _validate_request(self, request: UserRequest, route_trace: list[dict[str, Any]]) -> str:
         """Step 1 & 2: Validates schema and privacy transmission feasibility."""

@@ -121,6 +121,7 @@ def check_core_modules() -> list[str]:
         "inferpath.telemetry.structured_logging",
         "inferpath.telemetry.tracing",
         "inferpath.config.deployment_profiles",
+        "inferpath.handlers.factory",
         "inferpath.evaluation.router_eval",
         "inferpath.evaluation.harness",
     ]
