@@ -171,6 +171,49 @@ def test_learned_router(pricing_table):
     assert dec_conf.rule_id == "R01"
 
 
+def test_evaluate_learned_router_cross_validation_and_metrics():
+    """Verify LearnedRouter cross-validation, confusion matrix, Brier calibration, and regret."""
+    from inferpath.router import evaluate_learned_router
+
+    report = evaluate_learned_router(cv_folds=4, seed=42)
+
+    assert report["status"] == "evaluated_proof_of_concept"
+    assert report["sample_count"] >= 40
+    assert report["cv_folds"] == 4
+    assert 0.70 <= report["mean_accuracy"] <= 1.0
+    assert 0.70 <= report["mean_macro_f1"] <= 1.0
+    assert 0.0 <= report["brier_score_calibration"] <= 0.50
+    assert len(report["confusion_matrix"]) == 4
+    assert "baselines" in report
+    assert report["baselines"]["majority_class_accuracy"] <= report["mean_accuracy"]
+    assert report["average_routing_regret_usd"] >= 0.0
+
+
+def test_constraint_aware_router_with_empirical_priors(pricing_table):
+    """Verify empirical quality priors override heuristic assumptions in ConstraintAwareRouter."""
+    # Custom calibration prior where small model is calibrated with higher quality for standard task
+    custom_priors = {
+        "short_explanations": {
+            RouteTier.SMALL_MODEL_C: 0.92,
+            RouteTier.LARGE_MODEL_D: 0.98,
+        }
+    }
+    router = ConstraintAwareRouter(
+        pricing_table=pricing_table, empirical_quality_priors=custom_priors
+    )
+
+    req = UserRequest(
+        request_id="req_prior_test",
+        prompt="Explain photosynthesis in 2 sentences.",
+        metadata={"task_category": "short_explanations"},
+        task_parameters=TaskParameters(minimum_quality=0.90),
+    )
+    dec = router.route(req)
+    # Under default heuristic, small model might have Q_hat=0.88 (< 0.90) and get pruned to D.
+    # With empirical prior Q_hat=0.92 (>= 0.90), Tier C satisfies quality at lower cost!
+    assert dec.selected_tier == RouteTier.SMALL_MODEL_C
+
+
 def test_oracle_router(pricing_table):
     from inferpath.router import OracleRouter
 

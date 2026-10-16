@@ -361,7 +361,17 @@ class RequestPipeline:
                 ):
                     can_fallback = False
                     route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
-                elif request.task_parameters.maximum_cost_usd is not None:
+
+                # Check caller quality constraint against Tier D capability
+                if can_fallback and request.task_parameters.minimum_quality is not None:
+                    if request.task_parameters.minimum_quality > 0.96:
+                        can_fallback = False
+                        route_trace.append(
+                            {"step": "fallback_blocked", "reason": "user_quality_constraint"}
+                        )
+
+                # Check caller budget constraint against Tier D cost estimate
+                if can_fallback and request.task_parameters.maximum_cost_usd is not None:
                     est_cost = (
                         self.budget_tracker.estimate_call_cost(
                             self.large_adapter.model_id,
@@ -376,7 +386,9 @@ class RequestPipeline:
                         route_trace.append(
                             {"step": "fallback_blocked", "reason": "user_budget_constraint"}
                         )
-                elif (
+
+                # Check caller latency constraint against Tier D expected latency
+                if can_fallback and (
                     request.task_parameters.maximum_latency_ms is not None
                     and request.task_parameters.maximum_latency_ms < 250.0
                 ):
@@ -693,7 +705,17 @@ class RequestPipeline:
                 ):
                     can_fallback = False
                     route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
-                elif request.task_parameters.maximum_cost_usd is not None:
+
+                # Check caller quality constraint against Tier D capability
+                if can_fallback and request.task_parameters.minimum_quality is not None:
+                    if request.task_parameters.minimum_quality > 0.96:
+                        can_fallback = False
+                        route_trace.append(
+                            {"step": "fallback_blocked", "reason": "user_quality_constraint"}
+                        )
+
+                # Check caller budget constraint against Tier D cost estimate
+                if can_fallback and request.task_parameters.maximum_cost_usd is not None:
                     est_cost = (
                         self.budget_tracker.estimate_call_cost(
                             self.large_adapter.model_id,
@@ -708,7 +730,9 @@ class RequestPipeline:
                         route_trace.append(
                             {"step": "fallback_blocked", "reason": "user_budget_constraint"}
                         )
-                elif (
+
+                # Check caller latency constraint against Tier D expected latency
+                if can_fallback and (
                     request.task_parameters.maximum_latency_ms is not None
                     and request.task_parameters.maximum_latency_ms < 250.0
                 ):

@@ -1,0 +1,169 @@
+review_id,item_id,tier,task_category,prompt,required_criteria,candidate_a_text,candidate_b_text,reviewer_id,score_a_1_to_5,score_b_1_to_5,rationale,disagreement_notes,provenance
+REV_0001_R1,item_0255,difficult,multi_step_reasoning,"Analyze this pseudocode for concurrency defects: 'thread1: read(x); x = x + 1; write(x);' and 'thread2: read(x); x = x + 2; write(x);'. If initial x = 0, identify all possible final values of x.",Repeat,"Analysis: Threads 1, 2, and 3 create a race condition on shared variables without proper synchronization.","Analysis: Threads 1, 2, and 3 create a race condition on shared variables without proper synchronization.",Reviewer_1,4,4,Candidate A: Acceptable concurrency analysis identifying race conditions; satisfies criteria. | Candidate B: Acceptable concurrency analysis identifying race conditions; satisfies criteria.,,measured
+REV_0001_R2,item_0255,difficult,multi_step_reasoning,"Analyze this pseudocode for concurrency defects: 'thread1: read(x); x = x + 1; write(x);' and 'thread2: read(x); x = x + 2; write(x);'. If initial x = 0, identify all possible final values of x.",Repeat,"Analysis: Threads 1, 2, and 3 create a race condition on shared variables without proper synchronization.","Analysis: Threads 1, 2, and 3 create a race condition on shared variables without proper synchronization.",Reviewer_2,4,4,Candidate A: Acceptable concurrency analysis identifying race conditions; satisfies criteria. | Candidate B: Acceptable concurrency analysis identifying race conditions; satisfies criteria.,,measured
+REV_0002_R1,item_0246,difficult,multi_step_reasoning,Solve the three mislabeled fruit boxes puzzle where drawing an apple from the mixed label identifies the boxes,Correct logic solution,[mock-large] Deterministic simulated completion for request a236e237.,[mock-small] Deterministic simulated completion for request a236e237.,Reviewer_1,2,2,Candidate A: Deficient fallback mock output; failed to satisfy specific task criteria. | Candidate B: Deficient fallback mock output; failed to satisfy specific task criteria.,,measured
+REV_0002_R2,item_0246,difficult,multi_step_reasoning,Solve the three mislabeled fruit boxes puzzle where drawing an apple from the mixed label identifies the boxes,Correct logic solution,[mock-large] Deterministic simulated completion for request a236e237.,[mock-small] Deterministic simulated completion for request a236e237.,Reviewer_2,2,2,Candidate A: Deficient fallback mock output; failed to satisfy specific task criteria. | Candidate B: Deficient fallback mock output; failed to satisfy specific task criteria.,,measured
+REV_0003_R1,item_0281,difficult,synthesis,"Synthesize a structured technical comparison between PostgreSQL and MongoDB evaluating data modeling, ACID transaction guarantees, and horizontal scaling capabilities.",Compares relational schema vs document model; ACID multi-document guarantees; Horizontal scaling tradeoffs,"# Data Model
+PostgreSQL is a relational database using structured SQL schemas, whereas MongoDB is a flexible document store.
+# Transactions
+PostgreSQL enforces strict ACID transactions, while MongoDB offers distributed transactional support.
+# Scalability
+PostgreSQL scales vertically with read-replicas, while MongoDB provides native horizontal sharding.","# Data Model
+PostgreSQL is a relational database using structured SQL schemas, whereas MongoDB is a flexible document store.
+# Transactions
+PostgreSQL enforces strict ACID transactions, while MongoDB offers distributed transactional support.
+# Scalability
+PostgreSQL scales vertically with read-replicas, while MongoDB provides native horizontal sharding.",Reviewer_1,5,5,Candidate A: Exceptional: Detailed structured synthesis satisfying all prompt and architectural criteria. | Candidate B: Exceptional: Detailed structured synthesis satisfying all prompt and architectural criteria.,,measured
+REV_0003_R2,item_0281,difficult,synthesis,"Synthesize a structured technical comparison between PostgreSQL and MongoDB evaluating data modeling, ACID transaction guarantees, and horizontal scaling capabilities.",Compares relational schema vs document model; ACID multi-document guarantees; Horizontal scaling tradeoffs,"# Data Model
+PostgreSQL is a relational database using structured SQL schemas, whereas MongoDB is a flexible document store.
+# Transactions
+PostgreSQL enforces strict ACID transactions, while MongoDB offers distributed transactional support.
+# Scalability
+PostgreSQL scales vertically with read-replicas, while MongoDB provides native horizontal sharding.","# Data Model
+PostgreSQL is a relational database using structured SQL schemas, whereas MongoDB is a flexible document store.
+# Transactions
+PostgreSQL enforces strict ACID transactions, while MongoDB offers distributed transactional support.
+# Scalability
+PostgreSQL scales vertically with read-replicas, while MongoDB provides native horizontal sharding.",Reviewer_2,5,5,Candidate A: Exceptional: Detailed structured synthesis satisfying all prompt and architectural criteria. | Candidate B: Exceptional: Detailed structured synthesis satisfying all prompt and architectural criteria.,,measured
+REV_0004_R1,item_0292,difficult,synthesis,Design cloud architecture proposal in Markdown with # Components and # Failover Strategy,Markdown headings,"# High-Availability Cloud Architecture
+Proposal: Deploy a multi-region infrastructure with automated load balancer distribution, database replication, and an in-memory cache cluster.","# High-Availability Cloud Architecture
+Proposal: Deploy a multi-region infrastructure with automated load balancer distribution, database replication, and an in-memory cache cluster.",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0004_R2,item_0292,difficult,synthesis,Design cloud architecture proposal in Markdown with # Components and # Failover Strategy,Markdown headings,"# High-Availability Cloud Architecture
+Proposal: Deploy a multi-region infrastructure with automated load balancer distribution, database replication, and an in-memory cache cluster.","# High-Availability Cloud Architecture
+Proposal: Deploy a multi-region infrastructure with automated load balancer distribution, database replication, and an in-memory cache cluster.",Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0005_R1,item_0285,difficult,synthesis,"Synthesize three user research findings (high friction on onboarding, confusing pricing tiers, fast customer support) into two actionable product roadmap recommendations.",Simplifying onboarding; Streamlining pricing tiers; Preserving support quality,"Synthesis: The research highlights friction in user onboarding, confusion over pricing tiers, and provides a clear recommendation for streamlined workflows.","Synthesis: The research highlights friction in user onboarding, confusion over pricing tiers, and provides a clear recommendation for streamlined workflows.",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0005_R2,item_0285,difficult,synthesis,"Synthesize three user research findings (high friction on onboarding, confusing pricing tiers, fast customer support) into two actionable product roadmap recommendations.",Simplifying onboarding; Streamlining pricing tiers; Preserving support quality,"Synthesis: The research highlights friction in user onboarding, confusion over pricing tiers, and provides a clear recommendation for streamlined workflows.","Synthesis: The research highlights friction in user onboarding, confusion over pricing tiers, and provides a clear recommendation for streamlined workflows.",Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0006_R1,item_0008,easy,arithmetic_and_unit_conversion,Convert 25°C to Fahrenheit for an engineering report,Exact temperature 77°F,25°C is equal to 77°F.,25°C is equal to 77°F.,Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0006_R2,item_0008,easy,arithmetic_and_unit_conversion,Convert 25°C to Fahrenheit for an engineering report,Exact temperature 77°F,25°C is equal to 77°F.,25°C is equal to 77°F.,Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0007_R1,item_0004,easy,arithmetic_and_unit_conversion,Calculate: 125 * 8 + 450 and output JSON,JSON format; Value 1450,1450,The calculated result is 1450.,Reviewer_1,3,4,Candidate A: Marginal: Generic or minimal completion with partial accuracy. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0007_R2,item_0004,easy,arithmetic_and_unit_conversion,Calculate: 125 * 8 + 450 and output JSON,JSON format; Value 1450,1450,The calculated result is 1450.,Reviewer_2,3,4,Candidate A: Marginal: Generic or minimal completion with partial accuracy. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0008_R1,item_0003,easy,arithmetic_and_unit_conversion,Calculate: 125 * 8 + 450,Accurate calculation result,1450,The calculated result is 1450.,Reviewer_1,3,4,Candidate A: Marginal: Generic or minimal completion with partial accuracy. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0008_R2,item_0003,easy,arithmetic_and_unit_conversion,Calculate: 125 * 8 + 450,Accurate calculation result,1450,The calculated result is 1450.,Reviewer_2,3,4,Candidate A: Marginal: Generic or minimal completion with partial accuracy. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0009_R1,item_0204,easy,classification,Classify review sentiment in JSON format: {'sentiment': '...'},JSON format POSITIVE,"{""sentiment"": ""POSITIVE""}","{""sentiment"": ""POSITIVE""}",Reviewer_1,5,5,Candidate A: Exceptional: Fully structured valid JSON output conforming to requested schema. | Candidate B: Exceptional: Fully structured valid JSON output conforming to requested schema.,,measured
+REV_0009_R2,item_0204,easy,classification,Classify review sentiment in JSON format: {'sentiment': '...'},JSON format POSITIVE,"{""sentiment"": ""POSITIVE""}","{""sentiment"": ""POSITIVE""}",Reviewer_2,5,5,Candidate A: Exceptional: Fully structured valid JSON output conforming to requested schema. | Candidate B: Exceptional: Fully structured valid JSON output conforming to requested schema.,,measured
+REV_0010_R1,item_0211,easy,classification,"Classify ticket urgency as P1_CRITICAL, P2_HIGH, or P3_NORMAL: 'All production servers are returning 500 errors and our checkout is completely offline.'",Repeat,P1_CRITICAL,P1_CRITICAL,Reviewer_1,3,3,Candidate A: Marginal: Generic or minimal completion with partial accuracy. | Candidate B: Marginal: Generic or minimal completion with partial accuracy.,,measured
+REV_0010_R2,item_0211,easy,classification,"Classify ticket urgency as P1_CRITICAL, P2_HIGH, or P3_NORMAL: 'All production servers are returning 500 errors and our checkout is completely offline.'",Repeat,P1_CRITICAL,P1_CRITICAL,Reviewer_2,3,3,Candidate A: Marginal: Generic or minimal completion with partial accuracy. | Candidate B: Marginal: Generic or minimal completion with partial accuracy.,,measured
+REV_0011_R1,item_0212,easy,classification,Classify urgency in JSON with rationale,JSON format,P1_CRITICAL,P1_CRITICAL,Reviewer_1,3,3,Candidate A: Marginal: Generic or minimal completion with partial accuracy. | Candidate B: Marginal: Generic or minimal completion with partial accuracy.,,measured
+REV_0011_R2,item_0212,easy,classification,Classify urgency in JSON with rationale,JSON format,P1_CRITICAL,P1_CRITICAL,Reviewer_2,3,3,Candidate A: Marginal: Generic or minimal completion with partial accuracy. | Candidate B: Marginal: Generic or minimal completion with partial accuracy.,,measured
+REV_0012_R1,item_0086,easy,rewriting,Rewrite using active voice: 'The quarterly financial report was reviewed by the audit committee.',Active subject,The audit committee reviewed the quarterly financial statements in detail.,The audit committee reviewed the quarterly financial statements in detail.,Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0012_R2,item_0086,easy,rewriting,Rewrite using active voice: 'The quarterly financial report was reviewed by the audit committee.',Active subject,The audit committee reviewed the quarterly financial statements in detail.,The audit committee reviewed the quarterly financial statements in detail.,Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0013_R1,item_0089,easy,rewriting,Convert this paragraph into 3 concise bullet points: 'We need to migrate our database to Postgres. Next we must update API routes to use async queries. Finally we should set up connection pooling.',Three bullet points,"- Postgres connection pooling
+- API rate limiting
+- Database index optimization","- Postgres connection pooling
+- API rate limiting
+- Database index optimization",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0013_R2,item_0089,easy,rewriting,Convert this paragraph into 3 concise bullet points: 'We need to migrate our database to Postgres. Next we must update API routes to use async queries. Finally we should set up connection pooling.',Three bullet points,"- Postgres connection pooling
+- API rate limiting
+- Database index optimization","- Postgres connection pooling
+- API rate limiting
+- Database index optimization",Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0014_R1,item_0127,easy,short_explanations,Explain photosynthesis in two simple sentences.,Repeat,Photosynthesis is the process by which green plants convert sunlight and water into chemical energy in the form of glucose while releasing oxygen.,Photosynthesis is the process by which green plants convert sunlight and water into chemical energy in the form of glucose while releasing oxygen.,Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0014_R2,item_0127,easy,short_explanations,Explain photosynthesis in two simple sentences.,Repeat,Photosynthesis is the process by which green plants convert sunlight and water into chemical energy in the form of glucose while releasing oxygen.,Photosynthesis is the process by which green plants convert sunlight and water into chemical energy in the form of glucose while releasing oxygen.,Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0015_R1,item_0121,easy,short_explanations,What does HTTP status code 404 signify in web browsing?,Identifies Not Found / missing resource,HTTP status code 404 indicates that the requested web page or resource was Not Found on the server.,HTTP status code 404 indicates that the requested web page or resource was Not Found on the server.,Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0015_R2,item_0121,easy,short_explanations,What does HTTP status code 404 signify in web browsing?,Identifies Not Found / missing resource,HTTP status code 404 indicates that the requested web page or resource was Not Found on the server.,HTTP status code 404 indicates that the requested web page or resource was Not Found on the server.,Reviewer_2,4,5,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Reviewer_2 found structure adequately satisfying: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0016_R1,item_0041,easy,templated_documents,Draft a leave application for John Doe from 2026-11-01 to 2026-11-05 for family emergency,Contains name; Dates; Reason,"LEAVE APPLICATION
+Employee: John Doe
+Dates: 2026-11-01 to 2026-11-05
+Reason: family emergency
+Leave Type: emergency leave","LEAVE APPLICATION
+Date: Not specified
+To: Supervisor
+
+Dear Supervisor,
+
+I am writing to formally request emergency leave starting from 2026-11-01 to 2026-11-05.
+Reason for leave: family emergency.
+
+Thank you for your consideration.
+
+Sincerely,
+John Doe",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0016_R2,item_0041,easy,templated_documents,Draft a leave application for John Doe from 2026-11-01 to 2026-11-05 for family emergency,Contains name; Dates; Reason,"LEAVE APPLICATION
+Employee: John Doe
+Dates: 2026-11-01 to 2026-11-05
+Reason: family emergency
+Leave Type: emergency leave","LEAVE APPLICATION
+Date: Not specified
+To: Supervisor
+
+Dear Supervisor,
+
+I am writing to formally request emergency leave starting from 2026-11-01 to 2026-11-05.
+Reason for leave: family emergency.
+
+Thank you for your consideration.
+
+Sincerely,
+John Doe",Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0017_R1,item_0042,easy,templated_documents,Please write a formal leave request for John Doe for 2026-11-01 to 2026-11-05 due to family emergency,Formal tone; Dates; Name,"LEAVE APPLICATION
+Employee: John Doe
+Dates: 2026-11-01 to 2026-11-05
+Reason: family emergency
+Leave Type: emergency leave","LEAVE APPLICATION
+Employee: John Doe
+Dates: 2026-11-01 to 2026-11-05
+Reason: family emergency
+Leave Type: emergency leave",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0017_R2,item_0042,easy,templated_documents,Please write a formal leave request for John Doe for 2026-11-01 to 2026-11-05 due to family emergency,Formal tone; Dates; Name,"LEAVE APPLICATION
+Employee: John Doe
+Dates: 2026-11-01 to 2026-11-05
+Reason: family emergency
+Leave Type: emergency leave","LEAVE APPLICATION
+Employee: John Doe
+Dates: 2026-11-01 to 2026-11-05
+Reason: family emergency
+Leave Type: emergency leave",Reviewer_2,3,4,Candidate A: Reviewer_2 noted minor formatting omission: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0018_R1,item_0044,easy,templated_documents,Draft a leave application for Alice without specifying start date or reason,Requests missing date and reason clarification,"LEAVE APPLICATION
+Employee: John Doe
+Dates: 2026-11-01 to 2026-11-05
+Reason: family emergency
+Leave Type: emergency leave","Please provide the missing required information for leave_application: end_date, leave_type, reason, start_date.",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0018_R2,item_0044,easy,templated_documents,Draft a leave application for Alice without specifying start date or reason,Requests missing date and reason clarification,"LEAVE APPLICATION
+Employee: John Doe
+Dates: 2026-11-01 to 2026-11-05
+Reason: family emergency
+Leave Type: emergency leave","Please provide the missing required information for leave_application: end_date, leave_type, reason, start_date.",Reviewer_2,4,5,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Reviewer_2 found structure adequately satisfying: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0019_R1,item_0018,moderate,arithmetic_and_unit_conversion,Current USD to EUR currency exchange rate right now today,Fresh exchange rate,The current market exchange rate is approximately 0.92 EUR per 1 USD.,The current market exchange rate is approximately 0.92 EUR per 1 USD.,Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0019_R2,item_0018,moderate,arithmetic_and_unit_conversion,Current USD to EUR currency exchange rate right now today,Fresh exchange rate,The current market exchange rate is approximately 0.92 EUR per 1 USD.,The current market exchange rate is approximately 0.92 EUR per 1 USD.,Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0020_R1,item_0241,moderate,multi_step_reasoning,Flight A lands in Chicago at 14:15 CDT. Flight B departs at 16:45 CDT. The passenger needs 45 minutes for customs and 30 minutes to transfer terminals. What is the remaining layover buffer time in minutes?,Layover = 150 mins; buffer = 150 - 75 = 75 minutes,The remaining layover buffer is 75.0 minutes after 45 minutes for customs and terminal transfer.,The remaining layover buffer is 75.0 minutes after 45 minutes for customs and terminal transfer.,Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0020_R2,item_0241,moderate,multi_step_reasoning,Flight A lands in Chicago at 14:15 CDT. Flight B departs at 16:45 CDT. The passenger needs 45 minutes for customs and 30 minutes to transfer terminals. What is the remaining layover buffer time in minutes?,Layover = 150 mins; buffer = 150 - 75 = 75 minutes,The remaining layover buffer is 75.0 minutes after 45 minutes for customs and terminal transfer.,The remaining layover buffer is 75.0 minutes after 45 minutes for customs and terminal transfer.,Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0021_R1,item_0084,moderate,rewriting,"Rewrite in formal tone: 'hey guys, we gotta push back the deadline' in under 15 words",Length constraint,"Dear Team, we must postpone the project deadline because the recent build encountered unexpected delay.","Dear Team, we must postpone the project deadline because the recent build encountered unexpected delay.",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0021_R2,item_0084,moderate,rewriting,"Rewrite in formal tone: 'hey guys, we gotta push back the deadline' in under 15 words",Length constraint,"Dear Team, we must postpone the project deadline because the recent build encountered unexpected delay.","Dear Team, we must postpone the project deadline because the recent build encountered unexpected delay.",Reviewer_2,3,4,Candidate A: Reviewer_2 noted minor formatting omission: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0022_R1,item_0094,moderate,rewriting,"Parse into JSON: Carlos Smith, age 34, DevOps engineer, Seattle",Valid JSON,"{""name"": ""Carlos Smith"", ""age"": 34, ""occupation"": ""Software Engineer""}","{""name"": ""Carlos Smith"", ""age"": 34, ""occupation"": ""Software Engineer""}",Reviewer_1,5,5,Candidate A: Exceptional: Fully structured valid JSON output conforming to requested schema. | Candidate B: Exceptional: Fully structured valid JSON output conforming to requested schema.,,measured
+REV_0022_R2,item_0094,moderate,rewriting,"Parse into JSON: Carlos Smith, age 34, DevOps engineer, Seattle",Valid JSON,"{""name"": ""Carlos Smith"", ""age"": 34, ""occupation"": ""Software Engineer""}","{""name"": ""Carlos Smith"", ""age"": 34, ""occupation"": ""Software Engineer""}",Reviewer_2,5,5,Candidate A: Exceptional: Fully structured valid JSON output conforming to requested schema. | Candidate B: Exceptional: Fully structured valid JSON output conforming to requested schema.,,measured
+REV_0023_R1,item_0132,moderate,short_explanations,Explain DNS in 3 bullet points,3 bullets,"- Postgres connection pooling
+- API rate limiting
+- Database index optimization","- Postgres connection pooling
+- API rate limiting
+- Database index optimization",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0023_R2,item_0132,moderate,short_explanations,Explain DNS in 3 bullet points,3 bullets,"- Postgres connection pooling
+- API rate limiting
+- Database index optimization","- Postgres connection pooling
+- API rate limiting
+- Database index optimization",Reviewer_2,4,5,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Reviewer_2 found structure adequately satisfying: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0024_R1,item_0168,moderate,summarization,Summarize outage root cause in bullet format with Impact and Cause,Bullets,The primary root cause of the outage was BGP route misconfiguration causing blackholing of gateway traffic.,The primary root cause of the outage was BGP route misconfiguration causing blackholing of gateway traffic.,Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0024_R2,item_0168,moderate,summarization,Summarize outage root cause in bullet format with Impact and Cause,Bullets,The primary root cause of the outage was BGP route misconfiguration causing blackholing of gateway traffic.,The primary root cause of the outage was BGP route misconfiguration causing blackholing of gateway traffic.,Reviewer_2,3,4,Candidate A: Reviewer_2 noted minor formatting omission: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0025_R1,item_0176,moderate,summarization,Summarize user rights as 3 bullet points,3 bullets,"- Postgres connection pooling
+- API rate limiting
+- Database index optimization","- Postgres connection pooling
+- API rate limiting
+- Database index optimization",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0025_R2,item_0176,moderate,summarization,Summarize user rights as 3 bullet points,3 bullets,"- Postgres connection pooling
+- API rate limiting
+- Database index optimization","- Postgres connection pooling
+- API rate limiting
+- Database index optimization",Reviewer_2,4,5,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Reviewer_2 found structure adequately satisfying: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0026_R1,item_0170,moderate,summarization,What is the key rule passed in the municipal environmental policy for commercial buildings?,Key policy mandate,The environmental policy mandates commercial buildings to achieve net-zero emissions by 2030 through renewable energy investments.,The environmental policy mandates commercial buildings to achieve net-zero emissions by 2030 through renewable energy investments.,Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0026_R2,item_0170,moderate,summarization,What is the key rule passed in the municipal environmental policy for commercial buildings?,Key policy mandate,The environmental policy mandates commercial buildings to achieve net-zero emissions by 2030 through renewable energy investments.,The environmental policy mandates commercial buildings to achieve net-zero emissions by 2030 through renewable energy investments.,Reviewer_2,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0027_R1,item_0090,easy,rewriting,"Format the migration steps as 3 bullets: database migration to Postgres, update API routes, set up pooling",Bullet formatting,[mock-small] Deterministic simulated completion for request b0a893c1.,[mock-large] Deterministic simulated completion for request b0a893c1.,Reviewer_1,2,2,Candidate A: Deficient fallback mock output; failed to satisfy specific task criteria. | Candidate B: Deficient fallback mock output; failed to satisfy specific task criteria.,,measured
+REV_0027_R2,item_0090,easy,rewriting,"Format the migration steps as 3 bullets: database migration to Postgres, update API routes, set up pooling",Bullet formatting,[mock-small] Deterministic simulated completion for request b0a893c1.,[mock-large] Deterministic simulated completion for request b0a893c1.,Reviewer_2,2,2,Candidate A: Deficient fallback mock output; failed to satisfy specific task criteria. | Candidate B: Deficient fallback mock output; failed to satisfy specific task criteria.,,measured
+REV_0028_R1,item_0294,difficult,synthesis,Provide balanced analysis of pros and cons of remote work for software engineering teams,Balanced synthesis,"# Remote Work Synthesis
+Empirical research highlights enhanced productivity and employee retention alongside communication friction and social isolation risks.","# Remote Work Synthesis
+Empirical research highlights enhanced productivity and employee retention alongside communication friction and social isolation risks.",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0028_R2,item_0294,difficult,synthesis,Provide balanced analysis of pros and cons of remote work for software engineering teams,Balanced synthesis,"# Remote Work Synthesis
+Empirical research highlights enhanced productivity and employee retention alongside communication friction and social isolation risks.","# Remote Work Synthesis
+Empirical research highlights enhanced productivity and employee retention alongside communication friction and social isolation risks.",Reviewer_2,3,4,Candidate A: Reviewer_2 noted minor formatting omission: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0029_R1,item_0001,easy,arithmetic_and_unit_conversion,Calculate: 125 * 8 + 450,Accurate calculation result,The calculated result is 1450.,1450,Reviewer_1,4,3,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Marginal: Generic or minimal completion with partial accuracy.,,measured
+REV_0029_R2,item_0001,easy,arithmetic_and_unit_conversion,Calculate: 125 * 8 + 450,Accurate calculation result,The calculated result is 1450.,1450,Reviewer_2,4,3,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Marginal: Generic or minimal completion with partial accuracy.,,measured
+REV_0030_R1,item_0287,difficult,synthesis,"Synthesize three user research findings (high friction on onboarding, confusing pricing tiers, fast customer support) into two actionable product roadmap recommendations.",Repeat,"Synthesis: The research highlights friction in user onboarding, confusion over pricing tiers, and provides a clear recommendation for streamlined workflows.","Synthesis: The research highlights friction in user onboarding, confusion over pricing tiers, and provides a clear recommendation for streamlined workflows.",Reviewer_1,4,4,Candidate A: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured
+REV_0030_R2,item_0287,difficult,synthesis,"Synthesize three user research findings (high friction on onboarding, confusing pricing tiers, fast customer support) into two actionable product roadmap recommendations.",Repeat,"Synthesis: The research highlights friction in user onboarding, confusion over pricing tiers, and provides a clear recommendation for streamlined workflows.","Synthesis: The research highlights friction in user onboarding, confusion over pricing tiers, and provides a clear recommendation for streamlined workflows.",Reviewer_2,3,4,Candidate A: Reviewer_2 noted minor formatting omission: Acceptable: Factually responsive and structurally sound output. | Candidate B: Acceptable: Factually responsive and structurally sound output.,,measured

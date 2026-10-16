@@ -40,6 +40,15 @@ def validate_ratings(ratings: list[int | float], min_val: int = 1, max_val: int 
     return all(isinstance(r, (int, float)) and min_val <= r <= max_val for r in ratings)
 
 
+EVALUATION_RUBRIC_5_POINT: dict[int, str] = {
+    5: "Exceptional: Fully correct, comprehensive, well-structured, satisfies all constraints and criteria.",
+    4: "Acceptable: Factually accurate and usable, minor stylistic or formatting imperfections.",
+    3: "Marginal: Partially correct; key reasoning present but omitted non-critical details or minor format slip.",
+    2: "Deficient: Significant inaccuracies, hallucinated elements, or failed structural validator.",
+    1: "Failed: Completely incorrect, empty, refusal, offensive, or opposite of requested intent.",
+}
+
+
 def load_human_review_csv(csv_path: Path | str) -> list[HumanReviewRecord]:
     """Loads and validates human review records from a populated review CSV.
 
@@ -70,7 +79,11 @@ def load_human_review_csv(csv_path: Path | str) -> list[HumanReviewRecord]:
         reader = csv.DictReader(f)
         for row in reader:
             raw_prov = row.get("provenance")
-            prov = raw_prov.strip().lower() if raw_prov and raw_prov.strip() else "unknown"
+            prov = (
+                raw_prov.strip().lower()
+                if raw_prov and raw_prov.strip()
+                else "unknown"
+            )
 
             # Check candidate A score
             score_a_str = row.get("score_a_1_to_5", "").strip()
@@ -115,6 +128,7 @@ def load_human_review_csv(csv_path: Path | str) -> list[HumanReviewRecord]:
 
 def compute_inter_rater_agreement(
     records: list[HumanReviewRecord],
+    judge_scores: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Computes inter-rater agreement from empirical review records.
 
@@ -197,10 +211,28 @@ def compute_inter_rater_agreement(
         }
 
     kappa = compute_weighted_cohen_kappa(scores_r1, scores_r2, categories=[1, 2, 3, 4, 5])
+
+    # Compute human-judge agreement if judge scores are provided
+    hj_kappa = None
+    if judge_scores:
+        human_consensus: list[int] = []
+        judge_ratings: list[int] = []
+        for (item_id, _cand_id), scores in paired.items():
+            if item_id in judge_scores:
+                avg_score = round(sum(scores.values()) / len(scores.values()))
+                raw_judge = judge_scores[item_id]
+                judge_mapped = max(1, min(5, round(1 + raw_judge * 4)))
+                human_consensus.append(avg_score)
+                judge_ratings.append(judge_mapped)
+        if len(human_consensus) >= 5:
+            hj_kappa = compute_weighted_cohen_kappa(
+                human_consensus, judge_ratings, categories=[1, 2, 3, 4, 5]
+            )
+
     return {
         "status": "measured",
         "human_human_kappa": kappa,
-        "human_judge_kappa": None,  # Separate when judge predictions are paired
+        "human_judge_kappa": hj_kappa,
         "sample_size": len(scores_r1),
         "reviewers": [r1_id, r2_id],
     }

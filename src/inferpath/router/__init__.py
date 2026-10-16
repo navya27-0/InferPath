@@ -10,6 +10,7 @@ from inferpath.router.strategies import (
     ConstraintsUnsatisfiableError,
     LearnedRouter,
     OracleRouter,
+    evaluate_learned_router,
 )
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "RequestAnalysis",
     "RequestAnalyzer",
     "RuleBasedRouter",
+    "evaluate_learned_router",
 ]

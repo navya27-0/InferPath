@@ -1,0 +1,52 @@
+{
+  "run_id": "run_ablation_no_templates_test_3",
+  "system_id": "ablation_no_templates",
+  "run_index": 3,
+  "adapter_mode": "simulated",
+  "split": "test",
+  "dataset_version": "1.0.0",
+  "dataset_sha256": "da6ecc436e0f57d1c0db02a431e2b04c008c672a43ebd94ab416ac9d7c1a207d",
+  "config_hash": "83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3",
+  "git_commit": "bd7d04d24d7035e3f87a48da35bed87c4985b3a8-dirty",
+  "git_tree_clean": false,
+  "timestamp": "2026-10-16T12:00:22.023012+00:00",
+  "random_seed": 72,
+  "q_min": 0.7,
+  "price_table_date": "2026-10-01",
+  "environment_info": {
+    "python_version": "3.11.15 (main, Mar 10 2026, 18:12:25) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "node": "LAPTOP-4QLJUCGB",
+    "judge_type": "MockJudge",
+    "judge_provenance": "simulated"
+  },
+  "summary_metrics": {
+    "system_id": "ablation_no_templates",
+    "run_id": "run_ablation_no_templates_test_3",
+    "run_index": 3,
+    "adapter_mode": "simulated",
+    "split": "test",
+    "total_items": 160,
+    "quality_pass_rate": 0.0938,
+    "avg_quality_score": 0.2704,
+    "total_cost_usd_calculated": 0.003024,
+    "avg_cost_usd_calculated": 1.9e-05,
+    "total_judge_cost_usd": 0.0,
+    "total_evaluation_cost_usd": 0.003024,
+    "avg_latency_ms": 24.11,
+    "p50_latency_ms": 29.23,
+    "p95_latency_ms": 40.4,
+    "cache_hit_rate": 0.1875,
+    "fallback_rate": 0.0813,
+    "total_energy_wh": 1.7786,
+    "total_water_ml": 4.2687,
+    "avg_cost_regret": 0.0,
+    "over_escalation_rate": 0.0,
+    "under_escalation_rate": 0.0,
+    "route_distribution": {
+      "deterministic_a": 15,
+      "large_model_d": 26,
+      "small_model_c": 119
+    }
+  }
+}

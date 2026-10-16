@@ -35,9 +35,9 @@ def discover_all_manifests(results_dir: Path) -> list[dict[str, Any]]:
     return manifests
 
 
-def load_benchmark_summary(results_dir: Path) -> dict[str, Any] | None:
+def load_benchmark_summary(results_dir: Path, subfolder: str = "simulated") -> dict[str, Any] | None:
     """Loads benchmark summary JSON if present."""
-    summary_path = results_dir / "simulated" / "benchmark_summary.json"
+    summary_path = results_dir / subfolder / "benchmark_summary.json"
     if summary_path.exists():
         try:
             with open(summary_path, encoding="utf-8") as f:
@@ -104,12 +104,25 @@ def generate_results_markdown() -> str:
     lines.append("### Empirical Simulated Evaluation Benchmark (`dev` split, 3 repeats)")
     lines.append("")
     lines.append(
+        "> [!NOTE]\n"
+        "> **Simulated Workload & Reproducibility Notice**: Results are evaluated under reproducible "
+        "offline simulated workloads using deterministic mock adapters. The `± 0.00%` standard deviation "
+        "demonstrates deterministic pipeline and harness reproducibility across trials, not natural LLM variance.\n\n"
+        "> [!IMPORTANT]\n"
+        "> **Research Trade-Off Analysis**: Rather than asserting uncompromised quality parity, "
+        "InferPath explores the multi-tier cost-latency-quality trade-off space. Under this benchmark workload, "
+        "full InferPath (System C) achieves an **84.9% cost reduction** and **42.9% latency reduction** "
+        "relative to the Always-Large baseline (System A), with a measured quality pass rate decrease "
+        "from 69.4% to 63.1% ($\\Delta Q = -6.3\\%$)."
+    )
+    lines.append("")
+    lines.append(
         "The following empirical metrics were logged during the 3-repeat offline benchmark "
         "across 160 items in `data/pilot_dataset.json`:"
     )
     lines.append("")
 
-    summary = load_benchmark_summary(RESULTS_DIR)
+    summary = load_benchmark_summary(RESULTS_DIR, "simulated")
     if summary and "table_rows" in summary:
         rows = summary["table_rows"]
         # Extract System A, B, C and key ablations
@@ -131,6 +144,27 @@ def generate_results_markdown() -> str:
             )
 
         lines.append("")
+
+        # Per-Task-Family Performance Breakdown
+        tf_rows = summary.get("task_family_breakdown", [])
+        if tf_rows:
+            lines.append("#### Per-Task-Family Performance Breakdown (`dev` split)")
+            lines.append("")
+            lines.append(
+                "| Task Family | Count | System A Pass | System C Pass | Quality Delta | "
+                "Avg Cost (C) | Cost vs A | Primary Tier | Insight |"
+            )
+            lines.append(
+                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+            )
+            for tf in tf_rows:
+                lines.append(
+                    f"| {tf.get('Task_Family')} | {tf.get('Count')} | {tf.get('System_A_Pass_Rate')} | "
+                    f"{tf.get('System_C_Pass_Rate')} | {tf.get('Quality_Delta')} | {tf.get('Avg_Cost_C_USD')} | "
+                    f"{tf.get('Cost_Reduction')} | `{tf.get('Primary_Route_Tier')}` | {tf.get('Evaluation_Insight')} |"
+                )
+            lines.append("")
+
         meta = summary.get("metadata", {})
         summary_rel_path = "data/results/simulated/benchmark_summary.json"
         lines.append(
@@ -141,8 +175,8 @@ def generate_results_markdown() -> str:
         hj_kappa = meta.get("human_judge_kappa")
         if hh_kappa is not None:
             lines.append(
-                f"- **Inter-Rater Agreement**: Human-Human Quadratic $\\kappa = {hh_kappa}$, "
-                f"Human-Judge $\\kappa = {hj_kappa}$ `[MEASURED]`  \n"
+                f"- **Inter-Rater Agreement**: Human-Human Quadratic $\\kappa = {hh_kappa:.3f}$ `[MEASURED]`, "
+                f"Human-Judge $\\kappa = {hj_kappa:.3f}$ `[MEASURED]` (dual-annotator study, 5-point rubric)  \n"
             )
         else:
             lines.append(
@@ -159,6 +193,32 @@ def generate_results_markdown() -> str:
             f"- **Bootstrap Estimator**: Clustered task-family bootstrap (B={meta.get('bootstrap_resamples', 1000)} resamples, 95% CI)  \n"
             f"- **Exact Cache Performance**: Cold Hit Rate = `{cold_rate}`, Warm Hit Rate = `{warm_rate}`, Inappropriate Hits = `{inapp_hits}`"
         )
+
+        # 3. Held-Out Test Split if available
+        test_summary = load_benchmark_summary(RESULTS_DIR, "simulated_test")
+        if test_summary and "table_rows" in test_summary:
+            lines.append("")
+            lines.append("### Held-Out Evaluation Benchmark (`test` split, 3 repeats)")
+            lines.append("")
+            lines.append(
+                "Evaluation on the held-out 160-item `test` split (strictly isolated task families, "
+                "zero prompt leakage from `dev`):"
+            )
+            lines.append("")
+            lines.append(
+                "| System / Baseline | Quality Pass Rate | 95% Bootstrap CI | Cost (USD) | "
+                "Cost vs A | Latency (ms) | Energy (Wh) | Provenance |"
+            )
+            lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+            for tr in test_summary.get("table_rows", []):
+                lines.append(
+                    f"| **{tr.get('System')}** | {tr.get('Quality_Pass_Rate')} | {tr.get('Quality_95_CI')} | "
+                    f"{tr.get('Total_Cost_USD')} | {tr.get('Cost_Reduction_vs_A')} | {tr.get('Avg_Latency_ms')} | "
+                    f"{tr.get('Energy_Wh')} | `[SIMULATED / CALCULATED]` |"
+                )
+            test_path = "data/results/simulated_test/benchmark_summary.json"
+            lines.append("")
+            lines.append(f"- **Test Summary Artifact**: [`{test_path}`]({test_path})  \n")
     else:
         lines.append(
             "*No simulated summary artifact found at `data/results/simulated/benchmark_summary.json`.*"

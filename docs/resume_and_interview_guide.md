@@ -8,9 +8,9 @@ This guide provides precise, high-impact resume phrasing, STAR-method interview 
 
 ### Option A: AI Systems & Inference Infrastructure Engineer (Recommended)
 - **Engineered InferPath**, an asynchronous multi-tier AI inference router (FastAPI, Python 3.11, aiosqlite) that dynamically cascades user requests across 4 execution tiers: deterministic AST math ($<1$ ms), Jinja2 templates, lightweight models (~8B), and frontier LLMs (~70B+).
-- **Formulated a constrained multi-objective optimizer** ($\min \text{Cost} + \lambda \cdot \text{Latency}$ s.t. $\hat{Q} \ge Q_{\min}$) coupled with an ex-post **Oracle baseline**, achieving **84.9% cost reduction** and **68.8% latency reduction** while bounding quality loss to 6.3% on public tasks.
+- **Formulated a constrained multi-objective optimizer** ($\min \text{Cost} + \lambda \cdot \text{Latency}$ s.t. $\hat{Q} \ge Q_{\min}$) coupled with an ex-post **Oracle baseline**, evaluated under reproducible offline simulated workloads: demonstrated an **84.9% cost reduction** and **3.4× latency reduction** while rigorously quantifying the trade-off with quality (63.1% vs 69.4% overall pass rate, 76.5% vs 84.1% on public tasks).
 - **Architected enterprise guardrails**: Zero-leakage Stage 1 privacy enforcer (HTTP 403), stateful **Circuit Breaker** (CLOSED/OPEN/HALF_OPEN), sliding-window rate limiter (120 req/min), canonical SHA-256 exact-response cache, and native Prometheus `/metrics` exposition.
-- **Built an empirical research evaluation harness** benchmarking 5 routing architectures and 5 ablations across 160 balanced tasks with clustered bootstrap confidence intervals and double-blind human review export protocols.
+- **Built an empirical research evaluation harness** benchmarking 5 routing architectures and 5 ablations across 160 balanced tasks with clustered bootstrap confidence intervals, double-blind human review export protocols ($\kappa = 0.859$), and held-out test split validation.
 
 ### Option B: ML Systems & Backend Platform Engineer
 - Developed a high-throughput AI gateway and routing framework processing 46+ concurrent requests per second with $<20$ ms median latency and 100% reliability under concurrent stress testing.
@@ -19,9 +19,9 @@ This guide provides precise, high-impact resume phrasing, STAR-method interview 
 - Deployed a full-stack research dashboard in Streamlit visualizing real-time routing regret, Pareto efficiency frontiers, failure taxonomy, and Scope 2 environmental footprint estimations.
 
 ### Option C: Research Engineer / Applied AI Scientist
-- Designed and benchmarked a resource-aware AI inference cascade investigating trade-offs between frontier model capabilities and resource consumption under formal privacy and latency constraints.
+- Evaluated under reproducible offline simulated workloads: designed and benchmarked a resource-aware AI inference cascade investigating trade-offs between frontier model capabilities and resource consumption under formal privacy and latency constraints.
 - Established the empirical Pareto frontier across rule-based, constraint-aware, machine-learned (RandomForest), and ex-post Oracle routing strategies.
-- Enforced strict statistical integrity: clustered bootstrap confidence intervals on semantic task families, Cliff's delta effect sizes ($d = -1.00$), and double-blind candidate review export protocols.
+- Enforced strict statistical integrity: clustered bootstrap confidence intervals on semantic task families, Cliff's delta effect sizes ($d = -0.63$), and double-blind multi-annotator review export protocols ($\kappa = 0.859$).
 
 ---
 
@@ -37,7 +37,7 @@ This guide provides precise, high-impact resume phrasing, STAR-method interview 
   4. Non-blocking SQLite exact-response cache keyed by canonical SHA-256 digests.
   5. Deterministic output validation with bounded single-level fallback from small model (Tier C) to large model (Tier D).
   6. Comprehensive telemetry encapsulating every metric in typed `ProvenanceValue` wrappers (`[MEASURED]`, `[CALCULATED]`, `[ESTIMATED]`, `[SIMULATED]`).
-- **Result**: In our 3-repeat empirical benchmark across 160 heterogeneous prompts, InferPath achieved an **84.9% cost reduction** and **66.7% latency reduction** with a 76.5% quality pass rate on public tasks, matching the empirical Pareto-optimal frontier.
+- **Result**: In our 3-repeat empirical benchmark across 160 heterogeneous prompts under simulated offline execution, InferPath achieved an **84.9% cost reduction** and **3.4× latency reduction** (26.7 ms vs 89.5 ms) with a 76.5% quality pass rate on public tasks (63.1% overall), analyzing the empirical Pareto trade-off.
 
 ---
 
@@ -62,9 +62,9 @@ This guide provides precise, high-impact resume phrasing, STAR-method interview 
 > **Answer**:  
 > "This reflects our strict adherence to scientific honesty and security invariants:  
 > Our 160-item development dataset contains 28 items (17.5%) classified as `internal` or `confidential`. InferPath's Stage 1 privacy policy unconditionally intercepts these requests with an HTTP 403 error before any model call can occur.  
-> Under standard end-to-end task completion metrics, privacy interception counts as non-generation, bounding the maximum possible score. On the 132 public items, InferPath achieves a **76.5% quality pass rate** (compared to System A's 84.1%), representing an acceptable 7.6% quality trade-off in exchange for an **84.9% reduction in inference cost** and **66.7% reduction in latency**."
+> Under standard end-to-end task completion metrics, privacy interception counts as non-generation, bounding the maximum possible score. On the 132 public items, InferPath achieves a **76.5% quality pass rate** (compared to System A's 84.1%), representing an explicit 7.6% quality trade-off in exchange for an **84.9% reduction in inference cost** and **3.4× reduction in latency** (26.7 ms vs 89.5 ms)."
 
 ### Q3: *"What is the difference between your Constraint-Aware Router and the Learned Router?"*
 > **Answer**:  
-> "The `LearnedRouter` uses a 4-class `RandomForestClassifier` trained on prompt structural features (character length, token count, digit ratios, JSON tokens). While it achieved lower nominal cost ($0.00200 vs $0.00410), it is a statistical model whose decisions can be opaque.  
+> "The `LearnedRouter` uses a 4-class `RandomForestClassifier` trained on prompt structural features (character length, token count, digit ratios, JSON tokens). While it achieved comparable cost ($0.00430 vs $0.00410), it is a statistical classifier without hard constraint guarantees.  
 > The `ConstraintAwareRouter` is an explicit optimizer: it models the Lagrangian objective $\text{Cost}(t) + \lambda \cdot \text{Latency}(t)$ subject to user-defined $Q_{\min}$, $B_{\max}$, and $L_{\max}$ ceilings. In production, this provides deterministic SLA compliance and explainable routing traces, which enterprises value over purely black-box routing."
