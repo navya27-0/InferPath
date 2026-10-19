@@ -66,21 +66,21 @@ def test_expired_entry_is_never_returned(exact_cache: ExactCache):
     output = _create_sample_output("This data expires quickly.")
     key = "short_ttl_key"
 
-    # Store with 1 second TTL
+    # Store with 2 second TTL
     exact_cache.store(
         cache_key=key,
         request=req,
         output=output,
         route=RouteTier.SMALL_MODEL_C,
-        ttl_seconds=1,
+        ttl_seconds=2,
     )
 
     # Immediately lookup: should hit
     hit_immediate = exact_cache.lookup(key)
     assert hit_immediate is not None
 
-    # Wait 1.1s for expiration
-    time.sleep(1.1)
+    # Wait 2.1s for expiration
+    time.sleep(2.1)
 
     # Lookup after expiration must strictly be None
     hit_expired = exact_cache.lookup(key)

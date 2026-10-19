@@ -157,12 +157,22 @@ The evaluation artifacts under `data/results/` are organized into distinct categ
 <!-- RESULTS_TABLE_START -->
 ### Headline Benchmark Results at a Glance
 
-| System | Quality | Cost | Latency | Evidence Type |
+| System | Quality Pass Rate | Cost (USD) | Latency | Evidence Type |
 | :--- | :--- | :--- | :--- | :--- |
-| **Always-Large** (System A) | 69.4% | $0.0272 | 89.5 ms | Simulated |
-| **InferPath** (System C) | 63.1% | $0.0041 | 25.8 ms | Simulated |
+| **Always-Large** (System A) | 69.4% `[SIMULATED]` | $0.0272 `[CALCULATED]` | 89.5 ms `[SIMULATED]` | Deterministic Simulation |
+| **InferPath** (System C) | 63.1% `[SIMULATED]` | $0.0041 `[CALCULATED]` | 25.8 ms `[SIMULATED]` | Deterministic Simulation |
 
-> **Core Research Trade-Off**: InferPath achieves an 84.9% cost reduction and 3.47× speedup by selectively delegating simpler or templated tasks to deterministic handlers and smaller models, intentionally accepting a measured 6.3% quality decline compared to routing every query to frontier models.
+> **Core Research Trade-Off**: InferPath achieves an **84.9% calculated cost reduction** and **3.47× speedup** by selectively delegating simpler or templated tasks to deterministic handlers and smaller models, intentionally accepting a measured **6.3% quality decline** compared to routing every query to frontier models.
+
+#### Summary Claims and Evidence Matrix
+
+| Claim | Methodological Evidence | Status | Documented Limitations |
+| :--- | :--- | :--- | :--- |
+| **Router reduces inference costs by ~85%** | Offline deterministic benchmark (`dev` split) | Supported in Simulation | Calibrated on dated pricing and synthetic token counts. |
+| **Router preserves quality** | Standard benchmark task families | Qualified Trade-Off | Accepts a measured -6.3% decline; does not claim uncompromised parity. |
+| **Autonomous privacy defense** | 20 adversarial DLP probes | Supported as Defense-in-Depth | 100% precision on benign inputs; 38.5% FNR under obfuscation. |
+| **Cache delivers 10x-35x speedups** | 7 workload trace profiles | Qualified by Workload | Highly effective on repetitive traffic; 1.2ms penalty on long-tail. |
+| **Multi-rater human agreement** | 120-item blind study across 3 annotators | Supported in Expanded Pilot | High inter-rater kappa (0.80); moderate automated-judge kappa (0.47). |
 
 ### Real-Provider Evaluation Results
 
@@ -267,9 +277,27 @@ Measured across 100 requests per concurrency pool using asynchronous ASGI client
 | **10 Workers (High Load)** | **45.6 RPS** | 20.1 ms | 418.1 ms | 601.8 ms | 1948.2 ms | **100.0%** |
 | **20 Workers (Stress Peak)** | **46.9 RPS** | 16.4 ms | 1219.5 ms | 1503.9 ms | 1715.3 ms | **100.0%** |
 
+### In-Depth Research Evaluations & Systems Reports
+
+- **[Claims & Evidence Matrix](docs/claims_and_evidence.md)**: Transparent verification status and documented limitations for every empirical claim.
+- **[Independent External Reproduction Guide](docs/reproduction_report.md)**: One-command master reproduction script (`scripts/reproduce_all.py`), checksums, and invariant stress-tests.
+- **[Expanded Multi-Rater Human Study](docs/human_evaluation_study.md)**: 120-item blind evaluation with 3 domain annotators, Lead Adjudicator, Fleiss' $\kappa$, and bootstrap CIs.
+- **[Simulator Calibration & Empirical Validation](docs/simulator_calibration.md)**: Decoupling simulator fidelity from router policy via Kolmogorov-Smirnov tests and failure-mode alignment.
+- **[Distribution Shift & Workload Robustness](docs/distribution_shift_analysis.md)**: Stress-testing across 10 shift dimensions (paraphrases, unseen tasks, multilingual, adversarial).
+- **[Formal Routing Optimization Formulation](docs/routing_formulation.md)**: Two-stage constrained optimization, $\lambda$ parameter selection, and code-to-math mapping.
+- **[Rigorous Routing Regret & Oracle Accounting](docs/regret_and_oracle.md)**: Information boundaries ($\mathcal{I}_0$ vs $\mathcal{I}_{\text{oracle}}$), fallback cost accounting, and regret definitions.
+- **[Scalability & Tail Latency Analysis](docs/scalability_and_tail_latency.md)**: Microbenchmark breakdown of SQLite lock contention, queueing delays, and multi-worker scaling.
+- **[Operational Modes & Production Readiness](docs/production_readiness.md)**: Boundaries between Research Prototype, Demonstration Deployment, and Production Candidate.
+- **[Adversarial Privacy Classification](docs/privacy_evaluation.md)**: 20-probe DLP evaluation covering encoded keys, multilingual PII, and defense-in-depth bounds.
+- **[Model Registry & Market Drift](docs/model_drift_evaluation.md)**: Dynamic registry resilience under pricing shocks, latency spikes, and generational model leaps.
+- **[Total Cost of Ownership (TCO) Model](docs/tco_analysis.md)**: Router compute, validation, logging, and egress overhead across prompt lengths.
+- **[Workload Trace Caching Analysis](docs/caching_workload_analysis.md)**: Hit rate and latency utility across 7 real-world workload trace distributions.
+- **[Public Reproducibility Manifests](docs/reproducibility.md)**: Provenance digests and sanitized run manifest schemas.
+
 ---
 
 ## 5. Visual Dashboard Inspection
+
 
 The research dashboard visualizes multi-system benchmarks, routing matrices, cache overhead, and live request traces:
 
@@ -305,12 +333,26 @@ InferPath/
 ├── docs/
 │   ├── architecture.md               # End-to-end component lifecycle & design
 │   ├── cache_design.md               # Exact cache specification & normalization
+│   ├── caching_workload_analysis.md  # Exact cache utility across 7 real-world workload traces
+│   ├── claims_and_evidence.md        # Comprehensive claims and evidence verification matrix
 │   ├── dashboard.md                  # Streamlit dashboard architecture & usage
+│   ├── distribution_shift_analysis.md# Robustness analysis across 10 distribution shift dimensions
 │   ├── evaluation.md                 # Empirical findings & 4-pillar evidence report
+│   ├── human_evaluation_study.md     # Multi-rater human review study with adjudication and bootstrap CIs
 │   ├── methodology_and_assumptions.md# Resource estimation equations & coefficients
+│   ├── model_drift_evaluation.md     # Dynamic model registry & market drift evaluation
+│   ├── privacy_evaluation.md         # Adversarial privacy classification & defense-in-depth bounds
+│   ├── production_readiness.md       # Operational modes (Prototype, Demo, Production Candidate)
 │   ├── real_vs_simulated_gap.md      # Live provider vs offline simulation gap audit
+│   ├── regret_and_oracle.md          # Rigorous regret metrics & counterfactual oracle formulation
+│   ├── reproduction_report.md        # Independent external reproduction guide & verification report
+│   ├── reproducibility.md            # Provenance hashes & public sanitized manifest protocol
+│   ├── routing_formulation.md        # Constrained optimization formulation & code mapping
 │   ├── routing_rules.md              # Rule table, precedence, and regex triggers
+│   ├── scalability_and_tail_latency.md # Concurrency profiling, tail latency, & component breakdown
+│   ├── tco_analysis.md               # Total Cost of Ownership (TCO) & compute overhead analysis
 │   └── threats_to_validity.md        # Comprehensive experimental validity critique
+
 ├── scripts/
 │   ├── benchmark_concurrency.py      # Real system-level ASGI throughput & latency benchmark
 │   ├── capture_screenshots.py        # Automated headless CDP screenshot utility

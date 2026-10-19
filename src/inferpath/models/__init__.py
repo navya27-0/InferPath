@@ -20,6 +20,7 @@ from inferpath.models.enums import (
     RouteTier,
     TaskType,
 )
+from inferpath.models.registry import ModelMetadata, ModelRegistry
 from inferpath.models.telemetry import (
     BoundaryDefinition,
     MetricValue,
@@ -48,4 +49,6 @@ __all__ = [
     "RouteDecision",
     "Response",
     "RunRecord",
+    "ModelMetadata",
+    "ModelRegistry",
 ]

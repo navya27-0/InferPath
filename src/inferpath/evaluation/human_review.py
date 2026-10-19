@@ -455,3 +455,95 @@ def generate_blind_human_review_csv(
             json.dump(unblinding_keys, f, indent=2)
 
     return csv_content
+
+
+def compute_fleiss_kappa(
+    ratings_matrix: list[list[int]], categories: list[int] | None = None
+) -> float:
+    """Computes Fleiss' kappa for multiple (>=2) raters evaluating N items on an ordinal/categorical scale."""
+    if not ratings_matrix:
+        return 0.0
+    cats = categories or sorted(list({c for row in ratings_matrix for c in row}))
+    k = len(cats)
+    if k <= 1:
+        return 1.0
+    cat_to_idx = {c: i for i, c in enumerate(cats)}
+    N = len(ratings_matrix)
+    n = len(ratings_matrix[0])  # number of raters per item
+    if n <= 1 or N == 0:
+        return 0.0
+
+    # Count matrix table: N x k
+    table = [[0] * k for _ in range(N)]
+    for i, row in enumerate(ratings_matrix):
+        for val in row:
+            if val in cat_to_idx:
+                table[i][cat_to_idx[val]] += 1
+
+    # P_i for each item
+    p_i = []
+    for i in range(N):
+        sum_sq = sum(table[i][j] ** 2 for j in range(k))
+        p_i.append((sum_sq - n) / (n * (n - 1)))
+    p_bar = sum(p_i) / N
+
+    # p_j for each category
+    p_j = []
+    for j in range(k):
+        col_sum = sum(table[i][j] for i in range(N))
+        p_j.append(col_sum / (N * n))
+    p_e_bar = sum(pj**2 for pj in p_j)
+
+    if 1.0 - p_e_bar == 0:
+        return 1.0
+    kappa = (p_bar - p_e_bar) / (1.0 - p_e_bar)
+    return round(float(kappa), 4)
+
+
+def adjudicate_ratings(
+    rater_scores: list[int],
+    threshold_diff: int = 1,
+    adjudicator_score: int | None = None,
+) -> tuple[int, bool]:
+    """Resolves rater disagreements if score range exceeds threshold_diff.
+
+    Returns:
+        (final_score, was_adjudicated)
+    """
+    if not rater_scores:
+        return 1, False
+    spread = max(rater_scores) - min(rater_scores)
+    if spread <= threshold_diff:
+        final = round(sum(rater_scores) / len(rater_scores))
+        return final, False
+    if adjudicator_score is not None:
+        return adjudicator_score, True
+    sorted_scores = sorted(rater_scores)
+    mid = len(sorted_scores) // 2
+    return sorted_scores[mid], True
+
+
+def bootstrap_human_score_ci(
+    scores: list[int | float],
+    resamples: int = 1000,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> tuple[float, float, float]:
+    """Computes mean and 95% bootstrap confidence interval for human review scores."""
+    if not scores:
+        return 0.0, 0.0, 0.0
+    rng = random.Random(seed)
+    n = len(scores)
+    means = []
+    for _ in range(resamples):
+        sample = [scores[rng.randint(0, n - 1)] for _ in range(n)]
+        means.append(sum(sample) / n)
+    means.sort()
+    lower_idx = int((alpha / 2.0) * resamples)
+    upper_idx = int((1.0 - alpha / 2.0) * resamples)
+    mean_val = sum(scores) / n
+    return (
+        round(mean_val, 4),
+        round(means[lower_idx], 4),
+        round(means[upper_idx], 4),
+    )

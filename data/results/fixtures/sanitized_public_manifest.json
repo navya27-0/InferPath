@@ -1,0 +1,118 @@
+{
+  "manifest_version": "2.0.0",
+  "run_id": "run_fixture_evaluation_pilot",
+  "timestamp": null,
+  "adapter_mode": "fixture",
+  "provider": "openrouter",
+  "model_id": null,
+  "code_commit_sha": "57caf142107ba28b39167a8f09d7f1c562747fd8",
+  "hashes": {
+    "dataset_sha256": "3f5393d4c5c9c632050382da940562cb3b8357bf75e96a65d488fcd7a939dd6f",
+    "pricing_table_sha256": "29098642ea18e6f74ea661e6659299c4f4a98c6c64ce2d8565503b5d19216eef",
+    "router_config_sha256": "pending"
+  },
+  "summary_metrics": {
+    "system_small": {
+      "system": "System_Small",
+      "model_id": "google/gemini-2.5-flash",
+      "provider": "openrouter",
+      "repeats": 2,
+      "total_items": 40,
+      "quality_pass_rate": 0.7,
+      "generation_cost_usd": 0.001338,
+      "judge_cost_usd": 0.00126,
+      "total_cost_usd": 0.002598,
+      "provider_reported_cost_usd": 0.002598,
+      "min_latency_ms": 320.0,
+      "max_latency_ms": 1150.0,
+      "avg_latency_ms": 684.2,
+      "p50_latency_ms": 640.0,
+      "p95_latency_ms": 920.0,
+      "std_latency_ms": 118.5,
+      "cache_hit_rate": 0.0,
+      "fallback_rate": 0.0,
+      "prompt_tokens": 6240,
+      "completion_tokens": 2900,
+      "judge_prompt_tokens": 10400,
+      "judge_completion_tokens": 1600,
+      "total_tokens": 9140,
+      "unhandled_failures": 0,
+      "circuit_breaker_state": "CLOSED",
+      "route_distribution": {
+        "small_model_c": 40
+      }
+    },
+    "system_c": {
+      "system": "System_C",
+      "model_id": "multi-tier (SafeCalculator, Jinja2, google/gemini-2.5-flash, anthropic/claude-3.7-sonnet)",
+      "provider": "openrouter",
+      "repeats": 2,
+      "total_items": 40,
+      "quality_pass_rate": 0.85,
+      "generation_cost_usd": 0.01368,
+      "judge_cost_usd": 0.00126,
+      "total_cost_usd": 0.01494,
+      "provider_reported_cost_usd": 0.01494,
+      "min_latency_ms": 1.2,
+      "max_latency_ms": 1480.0,
+      "avg_latency_ms": 342.5,
+      "p50_latency_ms": 28.5,
+      "p95_latency_ms": 1210.0,
+      "std_latency_ms": 385.2,
+      "cache_hit_rate": 0.15,
+      "fallback_rate": 0.05,
+      "prompt_tokens": 3680,
+      "completion_tokens": 2240,
+      "judge_prompt_tokens": 10400,
+      "judge_completion_tokens": 1600,
+      "total_tokens": 5920,
+      "unhandled_failures": 0,
+      "circuit_breaker_state": "CLOSED",
+      "route_distribution": {
+        "deterministic_a": 8,
+        "template_b": 4,
+        "small_model_c": 24,
+        "large_model_d": 4
+      }
+    },
+    "system_a": {
+      "system": "System_A",
+      "model_id": "anthropic/claude-3.7-sonnet",
+      "provider": "openrouter",
+      "repeats": 2,
+      "total_items": 40,
+      "quality_pass_rate": 0.9,
+      "generation_cost_usd": 0.08292,
+      "judge_cost_usd": 0.00126,
+      "total_cost_usd": 0.08418,
+      "provider_reported_cost_usd": 0.08418,
+      "min_latency_ms": 850.0,
+      "max_latency_ms": 2600.0,
+      "avg_latency_ms": 1420.8,
+      "p50_latency_ms": 1380.0,
+      "p95_latency_ms": 2150.0,
+      "std_latency_ms": 265.4,
+      "cache_hit_rate": 0.0,
+      "fallback_rate": 0.0,
+      "prompt_tokens": 6240,
+      "completion_tokens": 4280,
+      "judge_prompt_tokens": 10400,
+      "judge_completion_tokens": 1600,
+      "total_tokens": 10520,
+      "unhandled_failures": 0,
+      "circuit_breaker_state": "CLOSED",
+      "route_distribution": {
+        "large_model_d": 40
+      }
+    }
+  },
+  "network_and_transport": {
+    "http_status_codes": {
+      "200": 0
+    },
+    "retry_count": 0,
+    "rate_limit_events": 0,
+    "transport_protocol": "HTTPS/TLS1.3"
+  },
+  "reproducibility_notice": "Prompts are indexed by cryptographic hash to enable independent verification without releasing proprietary customer text."
+}

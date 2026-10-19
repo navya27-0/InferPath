@@ -1,0 +1,99 @@
+{
+  "title": "InferPath Mock Simulator Calibration & Sensitivity Evaluation",
+  "provenance": "calibrated_against_empirical_baseline",
+  "sample_size": 200,
+  "latency_distribution_calibration": {
+    "test_type": "Two-Sample Kolmogorov-Smirnov Test",
+    "ks_statistic": 0.075,
+    "p_value_approx": 0.6303,
+    "simulated_p50_ms": 29.74,
+    "empirical_p50_ms": 28.32,
+    "status": "PASS: distributions consistent within alpha=0.05"
+  },
+  "failure_mode_alignment": {
+    "total_variation_distance": 0.0477,
+    "cosine_similarity": 0.9948,
+    "empirical_failure_distribution": {
+      "timeout": 8,
+      "format_json_error": 14,
+      "arithmetic_slip": 12,
+      "context_truncation": 4,
+      "rate_limited": 6
+    },
+    "simulated_failure_distribution": {
+      "timeout": 7,
+      "format_json_error": 15,
+      "arithmetic_slip": 11,
+      "context_truncation": 3,
+      "rate_limited": 5
+    },
+    "alignment_assessment": "High semantic failure mode fidelity (cosine similarity > 0.98)"
+  },
+  "quality_calibration": {
+    "expected_calibration_error_ece": 0.0581,
+    "brier_score": 0.1603,
+    "assessment": "Low calibration error confirms confidence estimates reliably reflect empirical accuracy"
+  },
+  "sensitivity_analysis": {
+    "description": "Robustness of router decisions under parameter perturbations (-30% to +30%)",
+    "scenarios": [
+      {
+        "perturbation_factor": -0.3,
+        "perturbation_percent": "-30%",
+        "simulated_latency_ms": 20.29,
+        "simulated_quality_pass_rate": 0.628,
+        "simulated_cost_usd": 0.003916,
+        "is_stable": true
+      },
+      {
+        "perturbation_factor": -0.2,
+        "perturbation_percent": "-20%",
+        "simulated_latency_ms": 22.43,
+        "simulated_quality_pass_rate": 0.629,
+        "simulated_cost_usd": 0.003977,
+        "is_stable": true
+      },
+      {
+        "perturbation_factor": -0.1,
+        "perturbation_percent": "-10%",
+        "simulated_latency_ms": 24.56,
+        "simulated_quality_pass_rate": 0.63,
+        "simulated_cost_usd": 0.004039,
+        "is_stable": true
+      },
+      {
+        "perturbation_factor": 0.0,
+        "perturbation_percent": "+0%",
+        "simulated_latency_ms": 26.7,
+        "simulated_quality_pass_rate": 0.631,
+        "simulated_cost_usd": 0.0041,
+        "is_stable": true
+      },
+      {
+        "perturbation_factor": 0.1,
+        "perturbation_percent": "+10%",
+        "simulated_latency_ms": 28.84,
+        "simulated_quality_pass_rate": 0.628,
+        "simulated_cost_usd": 0.004162,
+        "is_stable": true
+      },
+      {
+        "perturbation_factor": 0.2,
+        "perturbation_percent": "+20%",
+        "simulated_latency_ms": 30.97,
+        "simulated_quality_pass_rate": 0.625,
+        "simulated_cost_usd": 0.004223,
+        "is_stable": true
+      },
+      {
+        "perturbation_factor": 0.3,
+        "perturbation_percent": "+30%",
+        "simulated_latency_ms": 33.11,
+        "simulated_quality_pass_rate": 0.622,
+        "simulated_cost_usd": 0.004285,
+        "is_stable": true
+      }
+    ],
+    "conclusion": "Router decision policy demonstrates bounded degradation and maintains >90% stability under severe latency/error jitter"
+  }
+}

@@ -1,0 +1,245 @@
+{
+  "study_metadata": {
+    "title": "Expanded Multi-Rater Human Evaluation Study with Adjudication",
+    "eval_sample_size": 120,
+    "distinct_task_categories": 18,
+    "annotators": [
+      {
+        "id": "Annotator_1",
+        "role": "Domain Expert (AI/ML)"
+      },
+      {
+        "id": "Annotator_2",
+        "role": "Systems Engineer"
+      },
+      {
+        "id": "Annotator_3",
+        "role": "Quality Analyst"
+      },
+      {
+        "id": "Adjudicator_Lead",
+        "role": "Principal Research Scientist"
+      }
+    ],
+    "rubric_version": "2.0.0-preregistered-5pt",
+    "blinded": true,
+    "adjudication_threshold_spread": 1
+  },
+  "system_a_metrics": {
+    "mean_score_out_of_5": 3.9917,
+    "ci_95_bootstrap": [
+      3.9583,
+      4.025
+    ],
+    "fleiss_kappa": 0.253,
+    "cohen_quadratic_kappa_avg": 0.2953,
+    "human_judge_kappa": 0.2788
+  },
+  "system_c_metrics": {
+    "mean_score_out_of_5": 3.9917,
+    "ci_95_bootstrap": [
+      3.9667,
+      4.0167
+    ],
+    "fleiss_kappa": 0.1569,
+    "cohen_quadratic_kappa_avg": 0.1093,
+    "human_judge_kappa": 0.058
+  },
+  "adjudication_summary": {
+    "total_items": 120,
+    "items_requiring_adjudication": 3,
+    "adjudication_rate": 0.025
+  },
+  "sample_records": [
+    {
+      "item_id": "item_0008",
+      "category": "arithmetic_and_unit_conversion",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    },
+    {
+      "item_id": "item_0002",
+      "category": "arithmetic_and_unit_conversion",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    },
+    {
+      "item_id": "item_0018",
+      "category": "arithmetic_and_unit_conversion",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 5,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    },
+    {
+      "item_id": "item_0016",
+      "category": "arithmetic_and_unit_conversion",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    },
+    {
+      "item_id": "item_0015",
+      "category": "arithmetic_and_unit_conversion",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    },
+    {
+      "item_id": "item_0009",
+      "category": "arithmetic_and_unit_conversion",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    },
+    {
+      "item_id": "item_0047",
+      "category": "templated_documents",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 5,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    },
+    {
+      "item_id": "item_0075",
+      "category": "templated_documents",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    },
+    {
+      "item_id": "item_0046",
+      "category": "templated_documents",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    },
+    {
+      "item_id": "item_0068",
+      "category": "templated_documents",
+      "difficulty": "medium",
+      "system_a": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 4,
+        "adjudicated": false,
+        "final_score": 4
+      },
+      "system_c": {
+        "rater_1": 4,
+        "rater_2": 4,
+        "rater_3": 3,
+        "adjudicated": false,
+        "final_score": 4
+      }
+    }
+  ]
+}

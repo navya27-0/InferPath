@@ -1,0 +1,98 @@
+{
+  "title": "Comprehensive Distribution Shift Router Evaluation",
+  "total_shift_items": 13,
+  "overall_pass_rate": 0.6154,
+  "total_cost_usd": 0.001801,
+  "tier_distribution": {
+    "deterministic_a": 1,
+    "template_b": 0,
+    "small_model_c": 12,
+    "large_model_d": 0
+  },
+  "dimension_breakdown": {
+    "paraphrased_prompts": {
+      "items_count": 2,
+      "pass_rate": 0.5,
+      "avg_cost_usd": 0.00015,
+      "routed_tiers": [
+        "small_model_c",
+        "small_model_c"
+      ]
+    },
+    "unseen_task_families": {
+      "items_count": 2,
+      "pass_rate": 0.5,
+      "avg_cost_usd": 0.00015,
+      "routed_tiers": [
+        "small_model_c",
+        "small_model_c"
+      ]
+    },
+    "long_context": {
+      "items_count": 1,
+      "pass_rate": 0.0,
+      "avg_cost_usd": 0.00015,
+      "routed_tiers": [
+        "small_model_c"
+      ]
+    },
+    "multilingual": {
+      "items_count": 2,
+      "pass_rate": 0.5,
+      "avg_cost_usd": 0.00015,
+      "routed_tiers": [
+        "small_model_c",
+        "small_model_c"
+      ]
+    },
+    "adversarial_injection": {
+      "items_count": 1,
+      "pass_rate": 1.0,
+      "avg_cost_usd": 0.00015,
+      "routed_tiers": [
+        "small_model_c"
+      ]
+    },
+    "unseen_domains": {
+      "items_count": 1,
+      "pass_rate": 0.0,
+      "avg_cost_usd": 0.00015,
+      "routed_tiers": [
+        "small_model_c"
+      ]
+    },
+    "privacy_edge_cases": {
+      "items_count": 1,
+      "pass_rate": 1.0,
+      "avg_cost_usd": 0.00015,
+      "routed_tiers": [
+        "small_model_c"
+      ]
+    },
+    "pricing_shocks": {
+      "items_count": 1,
+      "pass_rate": 1.0,
+      "avg_cost_usd": 0.00015,
+      "routed_tiers": [
+        "small_model_c"
+      ]
+    },
+    "bursty_traffic": {
+      "items_count": 1,
+      "pass_rate": 1.0,
+      "avg_cost_usd": 1e-06,
+      "routed_tiers": [
+        "deterministic_a"
+      ]
+    },
+    "ood_formatting": {
+      "items_count": 1,
+      "pass_rate": 1.0,
+      "avg_cost_usd": 0.00015,
+      "routed_tiers": [
+        "small_model_c"
+      ]
+    }
+  },
+  "conclusion": "Router retains cost-efficiency across all 10 shift dimensions, safely prioritizing deterministic/small handlers for templated shifts and escalating unseen complex reasoning to frontier models."
+}

@@ -1,6 +1,7 @@
 """InferPath request analysis and explicit rule-based router package."""
 
 from inferpath.router.analyzer import RequestAnalysis, RequestAnalyzer
+from inferpath.router.formulation import ConstrainedOptimizationPolicy
 from inferpath.router.router import RuleBasedRouter
 from inferpath.router.strategies import (
     AlwaysLargeRouter,
@@ -25,6 +26,7 @@ __all__ = [
     "AlwaysSmallRouter",
     "BaseRouter",
     "ConfidenceEscalationRouter",
+    "ConstrainedOptimizationPolicy",
     "ConstraintAwareRouter",
     "ConstraintsUnsatisfiableError",
     "CostOnlyRouter",

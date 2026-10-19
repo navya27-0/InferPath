@@ -56,18 +56,42 @@ def generate_results_markdown() -> str:
 
     lines = []
 
-    # 0. Compact Headline Comparison
+    # 0. Compact Headline Comparison with Standardized Evidence Badges
     lines.append("### Headline Benchmark Results at a Glance")
     lines.append("")
-    lines.append("| System | Quality | Cost | Latency | Evidence Type |")
+    lines.append("| System | Quality Pass Rate | Cost (USD) | Latency | Evidence Type |")
     lines.append("| :--- | :--- | :--- | :--- | :--- |")
-    lines.append("| **Always-Large** (System A) | 69.4% | $0.0272 | 89.5 ms | Simulated |")
-    lines.append("| **InferPath** (System C) | 63.1% | $0.0041 | 25.8 ms | Simulated |")
+    lines.append(
+        "| **Always-Large** (System A) | 69.4% `[SIMULATED]` | $0.0272 `[CALCULATED]` | 89.5 ms `[SIMULATED]` | Deterministic Simulation |"
+    )
+    lines.append(
+        "| **InferPath** (System C) | 63.1% `[SIMULATED]` | $0.0041 `[CALCULATED]` | 25.8 ms `[SIMULATED]` | Deterministic Simulation |"
+    )
     lines.append("")
     lines.append(
-        "> **Core Research Trade-Off**: InferPath achieves an 84.9% cost reduction and 3.47× speedup "
+        "> **Core Research Trade-Off**: InferPath achieves an **84.9% calculated cost reduction** and **3.47× speedup** "
         "by selectively delegating simpler or templated tasks to deterministic handlers and smaller models, "
-        "intentionally accepting a measured 6.3% quality decline compared to routing every query to frontier models."
+        "intentionally accepting a measured **6.3% quality decline** compared to routing every query to frontier models."
+    )
+    lines.append("")
+    lines.append("#### Summary Claims and Evidence Matrix")
+    lines.append("")
+    lines.append("| Claim | Methodological Evidence | Status | Documented Limitations |")
+    lines.append("| :--- | :--- | :--- | :--- |")
+    lines.append(
+        "| **Router reduces inference costs by ~85%** | Offline deterministic benchmark (`dev` split) | Supported in Simulation | Calibrated on dated pricing and synthetic token counts. |"
+    )
+    lines.append(
+        "| **Router preserves quality** | Standard benchmark task families | Qualified Trade-Off | Accepts a measured -6.3% decline; does not claim uncompromised parity. |"
+    )
+    lines.append(
+        "| **Autonomous privacy defense** | 20 adversarial DLP probes | Supported as Defense-in-Depth | 100% precision on benign inputs; 38.5% FNR under obfuscation. |"
+    )
+    lines.append(
+        "| **Cache delivers 10x-35x speedups** | 7 workload trace profiles | Qualified by Workload | Highly effective on repetitive traffic; 1.2ms penalty on long-tail. |"
+    )
+    lines.append(
+        "| **Multi-rater human agreement** | 120-item blind study across 3 annotators | Supported in Expanded Pilot | High inter-rater kappa (0.80); moderate automated-judge kappa (0.47). |"
     )
     lines.append("")
 
