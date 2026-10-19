@@ -20,6 +20,7 @@ from inferpath.models.domain import (
 )
 from inferpath.models.enums import PrivacyClass, ProvenanceLabel, RouteTier
 from inferpath.models.telemetry import ProvenanceValue
+from inferpath.pipeline_stages import CostAccumulator, FallbackCoordinator, ResultFinalizer
 from inferpath.router import BaseRouter, RuleBasedRouter
 from inferpath.router.analyzer import contains_sensitive_patterns
 from inferpath.router.strategies import ConstraintsUnsatisfiableError
@@ -109,6 +110,20 @@ class RequestPipeline:
         # Adapters: use injected or build based on configuration / mock mode
         self.small_adapter = small_adapter or self._create_small_adapter()
         self.large_adapter = large_adapter or self._create_large_adapter()
+
+        # Modular pipeline stages: fallback coordination and result finalization
+        try:
+            large_model_id = str(self.large_adapter.model_id)
+        except AttributeError:
+            large_model_id = "anthropic/claude-3.7-sonnet"
+
+        self.fallback_coordinator = FallbackCoordinator(
+            routing_settings=self.settings.routing,
+            privacy_enforcer=self.privacy_enforcer,
+            large_model_id=large_model_id,
+            budget_tracker=self.budget_tracker,
+        )
+        self.finalizer = ResultFinalizer(self.estimator)
 
     def _build_mock_small(self) -> MockSmallModel:
         """Constructs deterministic MockSmallModel via AdapterFactory."""
@@ -296,70 +311,13 @@ class RequestPipeline:
         route_trace: list[dict[str, Any]],
     ) -> bool:
         """Step 9: Checks whether fallback escalation from Tier C to Tier D is authorized."""
-        if (
-            val_result.is_valid
-            or not self.settings.routing.enable_fallback
-            or current_tier != RouteTier.SMALL_MODEL_C
-        ):
-            return False
-
-        # Privacy check for fallback
-        if request.privacy_class in (
-            PrivacyClass.INTERNAL,
-            PrivacyClass.CONFIDENTIAL_PRIVATE,
-        ):
-            can_tx, _ = self.privacy_enforcer.can_transmit_externally(
-                request, RouteTier.LARGE_MODEL_D
-            )
-            if not can_tx:
-                route_trace.append({"step": "fallback_blocked", "reason": "privacy_policy"})
-                return False
-
-        # Budget check for fallback
-        if self.budget_tracker:
-            est_d_cost = self.budget_tracker.estimate_call_cost(
-                self.large_adapter.model_id,
-                request.prompt,
-                request.task_parameters.max_tokens,
-            )
-            if est_d_cost > self.budget_tracker.remaining_budget:
-                route_trace.append({"step": "fallback_blocked", "reason": "budget_exhaustion"})
-                return False
-
-        # Caller constraints and eligibility check for fallback
-        if decision.eligible_tiers and RouteTier.LARGE_MODEL_D not in decision.eligible_tiers:
-            route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
-            return False
-
-        if (
-            request.task_parameters.minimum_quality is not None
-            and request.task_parameters.minimum_quality > 0.96
-        ):
-            route_trace.append({"step": "fallback_blocked", "reason": "user_quality_constraint"})
-            return False
-
-        if request.task_parameters.maximum_cost_usd is not None:
-            est_cost = (
-                self.budget_tracker.estimate_call_cost(
-                    self.large_adapter.model_id,
-                    request.prompt,
-                    request.task_parameters.max_tokens,
-                )
-                if self.budget_tracker
-                else 0.005
-            )
-            if est_cost > request.task_parameters.maximum_cost_usd:
-                route_trace.append({"step": "fallback_blocked", "reason": "user_budget_constraint"})
-                return False
-
-        if (
-            request.task_parameters.maximum_latency_ms is not None
-            and request.task_parameters.maximum_latency_ms < 250.0
-        ):
-            route_trace.append({"step": "fallback_blocked", "reason": "user_latency_constraint"})
-            return False
-
-        return True
+        return self.fallback_coordinator.can_attempt_fallback(
+            request=request,
+            decision=decision,
+            current_tier=current_tier,
+            val_result=val_result,
+            route_trace=route_trace,
+        )
 
     def _store_cache_if_eligible(
         self,
@@ -487,7 +445,9 @@ class RequestPipeline:
 
         # Step 7: Execute on cache miss (synchronous handler invocation)
         current_tier = decision.selected_tier
+        cost_accumulator = CostAccumulator()
         output = self._execute_tier(request, decision, current_tier)
+        cost_accumulator.record_call(current_tier, output)
         route_trace.append(
             {
                 "step": "handler_execution",
@@ -511,6 +471,7 @@ class RequestPipeline:
                 validation_passed=False,
                 elapsed_ms=elapsed_ms,
                 route_trace=route_trace,
+                cost_accumulator=cost_accumulator,
             )
 
         # Step 8: Deterministic output validation
@@ -538,6 +499,7 @@ class RequestPipeline:
             current_tier = RouteTier.LARGE_MODEL_D
 
             output = self._execute_tier(request, decision, RouteTier.LARGE_MODEL_D)
+            cost_accumulator.record_call(RouteTier.LARGE_MODEL_D, output)
             route_trace.append(
                 {
                     "step": "fallback_execution",
@@ -579,6 +541,7 @@ class RequestPipeline:
             validation_passed=val_result.is_valid,
             elapsed_ms=elapsed_ms,
             route_trace=route_trace,
+            cost_accumulator=cost_accumulator,
         )
 
     async def execute_async(self, request: UserRequest) -> PipelineResult:
@@ -626,7 +589,9 @@ class RequestPipeline:
 
         # Step 7: Execute on cache miss (asynchronous handler invocation)
         current_tier = decision.selected_tier
+        cost_accumulator = CostAccumulator()
         output = await self._execute_tier_async(request, decision, current_tier)
+        cost_accumulator.record_call(current_tier, output)
         route_trace.append(
             {
                 "step": "handler_execution",
@@ -650,6 +615,7 @@ class RequestPipeline:
                 validation_passed=False,
                 elapsed_ms=elapsed_ms,
                 route_trace=route_trace,
+                cost_accumulator=cost_accumulator,
             )
 
         # Step 8: Deterministic output validation
@@ -677,6 +643,7 @@ class RequestPipeline:
             current_tier = RouteTier.LARGE_MODEL_D
 
             output = await self._execute_tier_async(request, decision, RouteTier.LARGE_MODEL_D)
+            cost_accumulator.record_call(RouteTier.LARGE_MODEL_D, output)
             route_trace.append(
                 {
                     "step": "fallback_execution",
@@ -718,6 +685,7 @@ class RequestPipeline:
             validation_passed=val_result.is_valid,
             elapsed_ms=elapsed_ms,
             route_trace=route_trace,
+            cost_accumulator=cost_accumulator,
         )
 
     def _check_tier_transmission(self, request: UserRequest, tier: RouteTier) -> None:
@@ -836,8 +804,14 @@ class RequestPipeline:
         if decision.selected_tier == RouteTier.TEMPLATE_B:
             return f"jinja2_{decision.template_id or 'v1'}"
         if decision.selected_tier == RouteTier.SMALL_MODEL_C:
-            return self.small_adapter.model_id
-        return self.large_adapter.model_id
+            try:
+                return str(self.small_adapter.model_id)
+            except AttributeError:
+                return "google/gemini-2.5-flash"
+        try:
+            return str(self.large_adapter.model_id)
+        except AttributeError:
+            return "anthropic/claude-3.7-sonnet"
 
     def _finalize_result(
         self,
@@ -850,68 +824,19 @@ class RequestPipeline:
         validation_passed: bool,
         elapsed_ms: float,
         route_trace: list[dict[str, Any]],
+        cost_accumulator: CostAccumulator | None = None,
     ) -> PipelineResult:
-        # Determine cost
-        cost_usd = 0.0
-        if not was_cached and output.raw_response and "cost_usd_calculated" in output.raw_response:
-            cost_usd = float(output.raw_response["cost_usd_calculated"])
-
-        # Determine environmental estimates via EnvironmentalEstimator
-        total_tokens = output.input_tokens.value + output.output_tokens.value
-        model_id = (
-            output.raw_response.get("model_id") if output.raw_response else output.model_version
-        )
-        env_est = self.estimator.estimate(
-            tier=output.tier,
-            model_id=model_id,
-            total_tokens=total_tokens,
+        result = self.finalizer.finalize(
+            request=request,
+            decision=decision,
+            output=output,
             was_cached=was_cached,
-        )
-
-        final_tier = output.tier
-        prompt_digest = hash_prompt(request.prompt)
-
-        result = PipelineResult(
-            request_id=request.request_id,
-            prompt_hash=prompt_digest,
-            final_output=output.output_text,
-            needs_clarification=output.needs_clarification,
-            clarification_prompt=output.clarification_prompt,
-            initial_tier=decision.selected_tier,
-            final_tier=final_tier,
-            rule_id=decision.rule_id,
-            was_cached=was_cached,
-            validation_passed=validation_passed,
             fallback_occurred=fallback_occurred,
             fallback_history=fallback_history,
+            validation_passed=validation_passed,
+            elapsed_ms=elapsed_ms,
             route_trace=route_trace,
-            total_latency_ms=ProvenanceValue(
-                value=round(elapsed_ms, 2),
-                provenance=ProvenanceLabel.MEASURED,
-                unit="ms",
-            ),
-            cost_usd=ProvenanceValue(
-                value=round(cost_usd, 6),
-                provenance=ProvenanceLabel.CALCULATED,
-                unit="USD",
-            ),
-            energy_wh=env_est.energy_wh,
-            water_ml=env_est.total_water_ml,
-            privacy_class=request.privacy_class,
-            input_tokens=output.input_tokens,
-            output_tokens=output.output_tokens,
-            provider_reported_cost_usd=(
-                ProvenanceValue(
-                    value=float(output.raw_response["provider_reported_cost_usd"]),
-                    provenance=ProvenanceLabel.MEASURED,
-                    unit="USD",
-                )
-                if (
-                    output.raw_response
-                    and output.raw_response.get("provider_reported_cost_usd") is not None
-                )
-                else None
-            ),
+            cost_accumulator=cost_accumulator,
         )
 
         # Telemetry logging to JSONL
@@ -941,6 +866,35 @@ class RequestPipeline:
         ):
             meta["prompt_sample"] = request.prompt[:120]
 
+        in_tok = (
+            result.input_tokens.value
+            if result.input_tokens
+            else (output.input_tokens.value if output.input_tokens else 0)
+        )
+        in_prov = (
+            result.input_tokens.provenance
+            if result.input_tokens
+            else (
+                output.input_tokens.provenance
+                if output.input_tokens
+                else ProvenanceLabel.CALCULATED
+            )
+        )
+        out_tok = (
+            result.output_tokens.value
+            if result.output_tokens
+            else (output.output_tokens.value if output.output_tokens else 0)
+        )
+        out_prov = (
+            result.output_tokens.provenance
+            if result.output_tokens
+            else (
+                output.output_tokens.provenance
+                if output.output_tokens
+                else ProvenanceLabel.CALCULATED
+            )
+        )
+
         record = {
             "run_id": f"run_{request.request_id}",
             "request_id": request.request_id,
@@ -950,10 +904,10 @@ class RequestPipeline:
             "cache_status": cache_status,
             "latency_ms": result.total_latency_ms.value,
             "latency_provenance": result.total_latency_ms.provenance,
-            "input_tokens": output.input_tokens.value,
-            "input_tokens_provenance": output.input_tokens.provenance,
-            "output_tokens": output.output_tokens.value,
-            "output_tokens_provenance": output.output_tokens.provenance,
+            "input_tokens": in_tok,
+            "input_tokens_provenance": in_prov,
+            "output_tokens": out_tok,
+            "output_tokens_provenance": out_prov,
             "cost_usd": result.cost_usd.value,
             "cost_provenance": result.cost_usd.provenance,
             "fallback_events": [fb.model_dump() for fb in result.fallback_history],

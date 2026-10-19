@@ -12,7 +12,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from inferpath import __version__
-from inferpath.config.deployment_profiles import DeploymentProfileConfig, get_deployment_profile
+from inferpath.config.deployment_profiles import (
+    DeploymentProfileConfig,
+    ProfileName,
+    get_deployment_profile,
+)
 from inferpath.handlers.factory import AdapterFactory
 from inferpath.models.domain import TaskParameters, UserRequest
 from inferpath.models.enums import PrivacyClass
@@ -127,10 +131,24 @@ def create_app(
     app.state.default_bind_host = active_profile.default_bind_host
 
     # Initialize rate limiter with injected instance, distributed backend, or profile defaults
+    rate_limiter_status = "in_memory"
     if rate_limiter is not None:
         limiter: BaseRateLimiter = rate_limiter
+        rate_limiter_status = (
+            "distributed"
+            if isinstance(rate_limiter, DistributedRateLimiter)
+            else ("in_memory" if isinstance(rate_limiter, RateLimiter) else "custom")
+        )
     else:
         redis_url = os.getenv("INFERPATH_REDIS_URL") or os.getenv("REDIS_URL")
+        require_redis = os.getenv("INFERPATH_REQUIRE_REDIS", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        ) or (
+            active_profile.name in (ProfileName.PRODUCTION, ProfileName.STAGING)
+            and redis_url is not None
+        )
         if redis_url:
             try:
                 import redis
@@ -140,10 +158,26 @@ def create_app(
                     redis_client=redis_client,
                     requests_per_minute=active_profile.rate_limit_rpm,
                 )
-            except Exception:
+                rate_limiter_status = "distributed"
+            except Exception as e:
+                if require_redis:
+                    raise RuntimeError(
+                        f"Failed to initialize distributed rate limiter with redis_url={redis_url}: {e}"
+                    ) from e
+                import logging
+
+                logging.getLogger("inferpath.api").warning(
+                    "Redis distributed rate limiter initialization failed (%s). Falling back to in-memory RateLimiter.",
+                    e,
+                )
                 limiter = RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
+                rate_limiter_status = "in_memory (degraded_fallback)"
         else:
             limiter = RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
+            rate_limiter_status = "in_memory"
+
+    app.state.rate_limiter = limiter
+    app.state.rate_limiter_status = rate_limiter_status
 
     # Deployment mode configuration
     dep_mode = deployment_mode if deployment_mode is not None else active_profile.name.value
@@ -261,6 +295,7 @@ def create_app(
             "version": __version__,
             "deployment_mode": dep_mode,
             "profile": active_profile.name.value,
+            "rate_limiter": app.state.rate_limiter_status,
         }
 
     @app.get("/metrics")

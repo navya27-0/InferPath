@@ -124,7 +124,7 @@ Evaluation applied a validated 5-point rubric:
 ### 3.4 Held-Out Evaluation Benchmark (`test` split, 3 repeats)
 
 > [!WARNING]
-> **Mock-Coverage & Distribution Diagnostics (`test` split)**: Held-out simulated evaluation exposed substantial distribution and mock-coverage failure (mock adapter coverage rate: ~8.1%, with 147 unrecognized mock completions defaulting to generic fallbacks). Consequently, the test-split simulated pass rates (System A: 2.5%, System C: 9.4%) reflect mock adapter keyword omission rather than generalized LLM routing capability. This evaluation is preserved for diagnostic transparency, not as evidence of model generalization.
+> **Mock-Coverage & Distribution Diagnostics (`test` split)**: Held-out simulated evaluation exposed substantial distribution and mock-coverage failure (mock adapter coverage rate: 19.4%, with 129 unrecognized mock completions defaulting to generic fallbacks; protocol config hash `83da43205a66ba657d578bbe959cc611f9419b9cc37600e2dd8c1c2e125451f3`). Consequently, the test-split simulated pass rates (System A: 2.5%, System C: 9.4%) reflect mock adapter keyword omission rather than generalized LLM routing capability. This evaluation is preserved for diagnostic transparency, not as evidence of model generalization.
 
 | System | Quality_Pass_Rate | Quality_95_CI | Total_Cost_USD | Cost_Reduction_vs_A | Avg_Latency_ms | Energy_Wh |
 | --- | --- | --- | --- | --- | --- | --- |

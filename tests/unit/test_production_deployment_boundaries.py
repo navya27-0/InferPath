@@ -404,3 +404,43 @@ def test_pipeline_and_api_adapter_factory_injection():
     assert health.status_code == 200
     assert health.json()["version"] == __version__
     assert health.json()["version"] == "0.2.0"
+
+
+def test_redis_rate_limiter_health_reporting_and_degradation(monkeypatch):
+    """Verify health endpoint reports rate limiter status and handles graceful degradation."""
+    # 1. Default in-memory
+    monkeypatch.delenv("INFERPATH_REDIS_URL", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    app_default = create_app(deployment_mode="local-demo")
+    client_default = TestClient(app_default)
+    health_default = client_default.get("/v1/health").json()
+    assert health_default["rate_limiter"] == "in_memory"
+
+    # 2. Injected DistributedRateLimiter
+    dist_limiter = DistributedRateLimiter(requests_per_minute=60)
+    app_dist = create_app(rate_limiter=dist_limiter, deployment_mode="local-demo")
+    client_dist = TestClient(app_dist)
+    health_dist = client_dist.get("/v1/health").json()
+    assert health_dist["rate_limiter"] == "distributed"
+
+    # 3. Graceful degradation when redis connection fails and require_redis is False
+    monkeypatch.setenv("INFERPATH_REDIS_URL", "redis://invalid-host-cannot-connect:6379/0")
+    monkeypatch.setenv("INFERPATH_REQUIRE_REDIS", "false")
+    app_degraded = create_app(deployment_mode="local-demo")
+    client_degraded = TestClient(app_degraded)
+    health_degraded = client_degraded.get("/v1/health").json()
+    assert health_degraded["rate_limiter"] == "in_memory (degraded_fallback)"
+
+    # 4. Strict failure when require_redis is True
+    monkeypatch.setenv("INFERPATH_REQUIRE_REDIS", "true")
+    with pytest.raises(RuntimeError, match="Failed to initialize distributed rate limiter"):
+        create_app(deployment_mode="local-demo")
+
+
+def test_production_profile_enforces_redis_requirement(monkeypatch):
+    """Verify production profile refuses to silently fall back if REDIS_URL is provided but broken."""
+    monkeypatch.setenv("REDIS_URL", "redis://invalid-host-cannot-connect:6379/0")
+    monkeypatch.delenv("INFERPATH_REQUIRE_REDIS", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test-prod-key")
+    with pytest.raises(RuntimeError, match="Failed to initialize distributed rate limiter"):
+        create_app(deployment_mode="production")

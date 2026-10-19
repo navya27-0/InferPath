@@ -183,6 +183,12 @@ def test_pipeline_fallback_small_to_large_on_validation_failure(tmp_path, pricin
     assert result.validation_passed is True
     assert "fallback_success" in result.final_output
 
+    # Cost Accumulator verifies both attempts contributed to total cost & environmental footprints
+    # Small model cost (~0.000003) + Large model cost (~0.000117)
+    assert result.cost_usd.value > 0.000117
+    assert result.input_tokens.value == 18  # 9 + 9
+    assert result.output_tokens.value == 15  # 9 + 6
+
 
 def test_pipeline_fallback_depth_capped_at_one(tmp_path, pricing_table):
     """If large model also fails validation, pipeline terminates without further recursion."""
