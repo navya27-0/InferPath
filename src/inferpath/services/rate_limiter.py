@@ -130,13 +130,43 @@ class DistributedRateLimiter(BaseRateLimiter):
             now = time.time()
             cutoff = now - 60.0
             key = f"{self.key_prefix}{client_id}"
+
+            # Atomic evaluation via Lua script if supported by the Redis client
+            if hasattr(self.redis_client, "eval") and callable(self.redis_client.eval):
+                lua_script = (
+                    "local key = KEYS[1]\n"
+                    "local now = tonumber(ARGV[1])\n"
+                    "local cutoff = tonumber(ARGV[2])\n"
+                    "local limit = tonumber(ARGV[3])\n"
+                    "local ttl = tonumber(ARGV[4])\n"
+                    "redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)\n"
+                    "local current_count = redis.call('ZCARD', key)\n"
+                    "if current_count < limit then\n"
+                    "    redis.call('ZADD', key, now, tostring(now))\n"
+                    "    redis.call('EXPIRE', key, ttl)\n"
+                    "    return 1\n"
+                    "else\n"
+                    "    return 0\n"
+                    "end"
+                )
+                res = self.redis_client.eval(
+                    lua_script, 1, key, now, cutoff, self.requests_per_minute, 65
+                )
+                return bool(res)
+
             pipe = self.redis_client.pipeline()
             pipe.zremrangebyscore(key, "-inf", cutoff)
             pipe.zcard(key)
-            pipe.zadd(key, {str(now): now})
-            pipe.expire(key, 65)
-            _, count, *_ = pipe.execute()
-            return count < self.requests_per_minute
+            results = pipe.execute()
+            count = results[1] if len(results) > 1 else (results[0] if results else 0)
+
+            if count < self.requests_per_minute:
+                add_pipe = self.redis_client.pipeline()
+                add_pipe.zadd(key, {str(now): now})
+                add_pipe.expire(key, 65)
+                add_pipe.execute()
+                return True
+            return False
         except Exception:
             # Degrade gracefully to process-local tracking on external store failure
             return self._fallback_limiter.is_allowed(client_id)

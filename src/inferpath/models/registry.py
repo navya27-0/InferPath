@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from inferpath.models.enums import RouteTier
+from inferpath.models.enums import ProvenanceLabel, RouteTier
 
 
 @dataclass
@@ -34,6 +34,10 @@ class ModelMetadata:
     is_deprecated: bool = False
     replacement_model_id: str | None = None
     last_evaluated: str = "2026-10-19"
+    price_provenance: ProvenanceLabel = ProvenanceLabel.CALCULATED
+    latency_provenance: ProvenanceLabel = ProvenanceLabel.ESTIMATED
+    quality_provenance: ProvenanceLabel = ProvenanceLabel.ESTIMATED
+    capability_provenance: ProvenanceLabel = ProvenanceLabel.ESTIMATED
 
 
 class ModelRegistry:
@@ -52,13 +56,31 @@ class ModelRegistry:
                 version_tag="2026-06",
                 pricing_date="2026-10",
                 tier_mapping=RouteTier.SMALL_MODEL_C,
-                input_cost_per_1m=0.10,
-                output_cost_per_1m=0.40,
+                input_cost_per_1m=0.075,
+                output_cost_per_1m=0.30,
                 context_window_tokens=1048576,
                 p50_latency_ms=28.0,
                 p95_latency_ms=75.0,
                 quality_prior=0.74,
                 capabilities=["fast_inference", "large_context", "multilingual", "json_mode"],
+                price_provenance=ProvenanceLabel.CALCULATED,
+            )
+        )
+        self.register_model(
+            ModelMetadata(
+                provider="meta",
+                model_id="meta-llama/llama-3.1-8b-instruct",
+                version_tag="2026-07",
+                pricing_date="2026-10",
+                tier_mapping=RouteTier.SMALL_MODEL_C,
+                input_cost_per_1m=0.055,
+                output_cost_per_1m=0.055,
+                context_window_tokens=128000,
+                p50_latency_ms=35.0,
+                p95_latency_ms=90.0,
+                quality_prior=0.71,
+                capabilities=["fast_inference", "open_weights", "instruction_following"],
+                price_provenance=ProvenanceLabel.CALCULATED,
             )
         )
         # Tier D: Frontier models
@@ -81,6 +103,59 @@ class ModelRegistry:
                     "system_design",
                     "nuanced_writing",
                 ],
+                price_provenance=ProvenanceLabel.CALCULATED,
+            )
+        )
+        self.register_model(
+            ModelMetadata(
+                provider="openai",
+                model_id="openai/gpt-4o",
+                version_tag="2026-05",
+                pricing_date="2026-10",
+                tier_mapping=RouteTier.LARGE_MODEL_D,
+                input_cost_per_1m=2.50,
+                output_cost_per_1m=10.00,
+                context_window_tokens=128000,
+                p50_latency_ms=75.0,
+                p95_latency_ms=190.0,
+                quality_prior=0.93,
+                capabilities=["multimodal", "fast_frontier", "structured_json", "reasoning"],
+                price_provenance=ProvenanceLabel.CALCULATED,
+            )
+        )
+        # Test fixture / mock models
+        self.register_model(
+            ModelMetadata(
+                provider="mock",
+                model_id="mock-small",
+                version_tag="2026-10",
+                pricing_date="2026-10",
+                tier_mapping=RouteTier.SMALL_MODEL_C,
+                input_cost_per_1m=0.05,
+                output_cost_per_1m=0.20,
+                context_window_tokens=8192,
+                p50_latency_ms=10.0,
+                p95_latency_ms=25.0,
+                quality_prior=0.70,
+                capabilities=["simulated_deterministic"],
+                price_provenance=ProvenanceLabel.SIMULATED,
+            )
+        )
+        self.register_model(
+            ModelMetadata(
+                provider="mock",
+                model_id="mock-large",
+                version_tag="2026-10",
+                pricing_date="2026-10",
+                tier_mapping=RouteTier.LARGE_MODEL_D,
+                input_cost_per_1m=2.50,
+                output_cost_per_1m=10.00,
+                context_window_tokens=16384,
+                p50_latency_ms=20.0,
+                p95_latency_ms=50.0,
+                quality_prior=0.90,
+                capabilities=["simulated_deterministic"],
+                price_provenance=ProvenanceLabel.SIMULATED,
             )
         )
 

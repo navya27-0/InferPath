@@ -51,3 +51,54 @@ def test_budget_constraint_filtering():
     assert RouteTier.SMALL_MODEL_C in feasible
     best_tier, _, _ = policy.select_optimal_tier(req)
     assert best_tier == RouteTier.SMALL_MODEL_C
+
+
+def test_privacy_external_transmission_combinations():
+    policy = ConstrainedOptimizationPolicy()
+
+    # (a) Public with default external transmission
+    req_public_default = UserRequest(
+        request_id="req_pub_def",
+        prompt="What is the capital of France?",
+        privacy_class=PrivacyClass.PUBLIC,
+        task_parameters=TaskParameters(minimum_quality=0.60),
+    )
+    assert req_public_default.allow_external_transmission is True
+    feasible_pub = policy.determine_feasible_set(req_public_default)
+    assert RouteTier.SMALL_MODEL_C in feasible_pub
+    assert RouteTier.LARGE_MODEL_D in feasible_pub
+
+    # (b) Public with explicit local-only override (allow_external_transmission=False)
+    req_public_local = UserRequest(
+        request_id="req_pub_local",
+        prompt="What is the capital of France?",
+        privacy_class=PrivacyClass.PUBLIC,
+        allow_external_transmission=False,
+        task_parameters=TaskParameters(minimum_quality=0.60),
+    )
+    assert req_public_local.allow_external_transmission is False
+    feasible_pub_local = policy.determine_feasible_set(req_public_local)
+    assert RouteTier.SMALL_MODEL_C not in feasible_pub_local
+    assert RouteTier.LARGE_MODEL_D not in feasible_pub_local
+
+    # (c) Internal (defaults to allow_external_transmission=False)
+    req_internal = UserRequest(
+        request_id="req_internal",
+        prompt="Internal documentation query.",
+        privacy_class=PrivacyClass.INTERNAL,
+    )
+    assert req_internal.allow_external_transmission is False
+    feasible_internal = policy.determine_feasible_set(req_internal)
+    assert RouteTier.SMALL_MODEL_C not in feasible_internal
+    assert RouteTier.LARGE_MODEL_D not in feasible_internal
+
+    # (d) Confidential (defaults to allow_external_transmission=False)
+    req_confidential = UserRequest(
+        request_id="req_confidential",
+        prompt="Secret customer record.",
+        privacy_class=PrivacyClass.CONFIDENTIAL_PRIVATE,
+    )
+    assert req_confidential.allow_external_transmission is False
+    feasible_conf = policy.determine_feasible_set(req_confidential)
+    assert RouteTier.SMALL_MODEL_C not in feasible_conf
+    assert RouteTier.LARGE_MODEL_D not in feasible_conf

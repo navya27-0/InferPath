@@ -42,8 +42,10 @@ class CostAccumulator:
             cost = float(output.raw_response["cost_usd_calculated"])
 
         self.total_cost_usd += cost
-        self.total_input_tokens += output.input_tokens.value if output.input_tokens else 0
-        self.total_output_tokens += output.output_tokens.value if output.output_tokens else 0
+        if output.input_tokens and output.input_tokens.value is not None:
+            self.total_input_tokens += output.input_tokens.value
+        if output.output_tokens and output.output_tokens.value is not None:
+            self.total_output_tokens += output.output_tokens.value
 
         if (
             output.raw_response
@@ -56,8 +58,8 @@ class CostAccumulator:
             {
                 "tier": tier,
                 "cost_usd": cost,
-                "input_tokens": output.input_tokens.value if output.input_tokens else 0,
-                "output_tokens": output.output_tokens.value if output.output_tokens else 0,
+                "input_tokens": output.input_tokens.value if output.input_tokens else None,
+                "output_tokens": output.output_tokens.value if output.output_tokens else None,
                 "latency_ms": output.latency_ms.value if output.latency_ms else 0.0,
                 "model_version": output.model_version,
             }
@@ -183,7 +185,7 @@ class ResultFinalizer:
             # Aggregate environmental footprint across all actual model calls
             if len(cost_accumulator.call_records) == 1:
                 rec = cost_accumulator.call_records[0]
-                call_tokens = rec["input_tokens"] + rec["output_tokens"]
+                call_tokens = (rec["input_tokens"] or 0) + (rec["output_tokens"] or 0)
                 est = self.estimator.estimate(
                     tier=rec["tier"],
                     model_id=rec["model_version"],
@@ -196,7 +198,7 @@ class ResultFinalizer:
                 agg_energy_wh = 0.0
                 agg_water_ml = 0.0
                 for record in cost_accumulator.call_records:
-                    call_tokens = record["input_tokens"] + record["output_tokens"]
+                    call_tokens = (record["input_tokens"] or 0) + (record["output_tokens"] or 0)
                     est = self.estimator.estimate(
                         tier=record["tier"],
                         model_id=record["model_version"],
@@ -232,9 +234,17 @@ class ResultFinalizer:
                         output.raw_response["provider_reported_cost_usd"]
                     )
 
-            total_input_tokens = output.input_tokens.value if output.input_tokens else 0
-            total_output_tokens = output.output_tokens.value if output.output_tokens else 0
-            total_tokens = total_input_tokens + total_output_tokens
+            total_input_tokens = (
+                output.input_tokens.value
+                if (output.input_tokens and output.input_tokens.value is not None)
+                else None
+            )
+            total_output_tokens = (
+                output.output_tokens.value
+                if (output.output_tokens and output.output_tokens.value is not None)
+                else None
+            )
+            total_tokens = (total_input_tokens or 0) + (total_output_tokens or 0)
             model_id = (
                 output.raw_response.get("model_id") if output.raw_response else output.model_version
             )
@@ -280,17 +290,21 @@ class ResultFinalizer:
             input_tokens=ProvenanceValue(
                 value=total_input_tokens,
                 provenance=output.input_tokens.provenance
-                if output.input_tokens
-                else ProvenanceLabel.CALCULATED,
+                if (output.input_tokens and total_input_tokens is not None)
+                else ProvenanceLabel.UNAVAILABLE,
                 unit="tokens",
-            ),
+            )
+            if output.input_tokens
+            else None,
             output_tokens=ProvenanceValue(
                 value=total_output_tokens,
                 provenance=output.output_tokens.provenance
-                if output.output_tokens
-                else ProvenanceLabel.CALCULATED,
+                if (output.output_tokens and total_output_tokens is not None)
+                else ProvenanceLabel.UNAVAILABLE,
                 unit="tokens",
-            ),
+            )
+            if output.output_tokens
+            else None,
             provider_reported_cost_usd=ProvenanceValue(
                 value=round(provider_reported_cost, 6),
                 provenance=ProvenanceLabel.PROVIDER_REPORTED,

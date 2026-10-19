@@ -771,18 +771,23 @@ class RequestPipeline:
         return self._model_result_to_handler_output(model_res, tier)
 
     def _model_result_to_handler_output(self, model_res: Any, tier: RouteTier) -> HandlerOutput:
+        in_tok_val = model_res.input_tokens
+        in_tok_prov = model_res.source if in_tok_val is not None else ProvenanceLabel.UNAVAILABLE
+        out_tok_val = model_res.output_tokens
+        out_tok_prov = model_res.source if out_tok_val is not None else ProvenanceLabel.UNAVAILABLE
+
         return HandlerOutput(
             tier=tier,
             output_text=model_res.text,
             validated=True,
             input_tokens=ProvenanceValue(
-                value=model_res.input_tokens,
-                provenance=model_res.source,
+                value=in_tok_val,
+                provenance=in_tok_prov,
                 unit="tokens",
             ),
             output_tokens=ProvenanceValue(
-                value=model_res.output_tokens,
-                provenance=model_res.source,
+                value=out_tok_val,
+                provenance=out_tok_prov,
                 unit="tokens",
             ),
             latency_ms=ProvenanceValue(

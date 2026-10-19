@@ -21,6 +21,7 @@ class ProvenanceLabel(StrEnum):
         "estimated"  # Derived from model assumptions with low/central/high ranges (energy, water)
     )
     SIMULATED = "simulated"  # Produced by mock adapters or synthetic runs
+    PROVIDER_REPORTED = "provider_reported"  # Reported directly by upstream commercial provider API
     UNAVAILABLE = "unavailable"  # Usage or metric data missing, unparseable, or not reported
 
 

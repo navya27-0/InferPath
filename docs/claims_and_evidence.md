@@ -13,7 +13,7 @@ To maintain strict scientific and engineering rigor, capabilities in InferPath a
 | **`Implemented`** | Code written and merged into the core repository | Module exists with interfaces defined. |
 | **`Unit-tested`** | Hermetic automated tests verify syntax and logic | Passes automated `pytest` suites in isolation. |
 | **`Offline-evaluated`** | Benchmarked on simulated or synthetic datasets | Empirically measured across multiple trials under mock/simulated adapters. |
-| **`Externally reproduced`** | Fully reproducible via independent runner | All artifacts generated deterministically via `scripts/reproduce_all.py`. |
+| **`CI-reproduced`** | Fully reproducible via independent runner or CI pipeline | All artifacts generated deterministically via `scripts/reproduce_all.py`. |
 | **`Real-provider validated`** | Measured against live commercial LLM endpoints | Evaluated via OpenRouter/commercial APIs with live tokens and costs. |
 | **`Production-observed`** | Validated under real-world production traffic | Operating continuously under multi-tenant enterprise workload telemetry. |
 
@@ -21,12 +21,12 @@ To maintain strict scientific and engineering rigor, capabilities in InferPath a
 
 | Feature / Subsystem | Validation Status | Evidence Base & Operational Scope |
 | :--- | :--- | :--- |
-| **Explicit Rule & Constraint Router** | `Externally reproduced` | Evaluated across 3 trials on 160 `dev` items; verified via `scripts/reproduce_all.py`. |
-| **Stage 1 Declared Privacy Interception** | `Externally reproduced` | 100% interception of `confidential_private` and `internal` prompts (HTTP 403 / local). |
+| **Explicit Rule & Constraint Router** | `CI-reproduced` | Evaluated across 3 trials on 160 `dev` items; verified via `scripts/reproduce_all.py`. |
+| **Stage 1 Declared Privacy Interception** | `CI-reproduced` | 100% interception of `confidential_private` and `internal` prompts (HTTP 403 / local). |
 | **Adversarial Pattern DLP Detection** | `Offline-evaluated` | 20 adversarial probes: 100% precision, 38.5% FNR under obfuscation. Documented as defense-in-depth only. |
 | **Inference Cost Reduction (~85%)** | `Offline-evaluated (Simulated)` | Calibrated on dated OpenRouter pricing models and synthetic token counts on `dev` split. |
 | **Real-World Multi-Provider Cost Reduction** | `Not validated` | Live commercial multi-provider evaluation is ongoing; no qualifying full real split published yet. |
-| **Exact Caching & TTL Purge** | `Externally reproduced` | SQLite storage, TTL expiration, purge routine, and 7 workload traces verified in unit & trace tests. |
+| **Exact Caching & TTL Purge** | `CI-reproduced` | SQLite storage, TTL expiration, purge routine, and 7 workload traces verified in unit & trace tests. |
 | **Distributed Rate Limiting** | `Implemented & Unit-tested` | In-memory token bucket verified in CI; multi-node Redis architecture documented for Mode 3 production. |
 | **Total Cost of Ownership (TCO) Model** | `Modeled & Sensitivity-tested` | Router compute, validation, and serialization amortized against token counts from 10 to 4,000 tokens. |
 | **Environmental Footprint (Carbon/Water)** | `Estimated (Not physically measured)` | Derived from modeled PUE (1.2) and WUE (1.8 L/kWh) regional coefficients, not datacenter meters. |

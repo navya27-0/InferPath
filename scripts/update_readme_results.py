@@ -91,10 +91,10 @@ def generate_results_markdown() -> str:
     lines.append("| Feature / Subsystem | Validation Status | Evidence Base & Operational Scope |")
     lines.append("| :--- | :--- | :--- |")
     lines.append(
-        "| **Explicit Rule & Constraint Router** | `Externally reproduced` | Evaluated across 3 trials on 160 `dev` items; verified via `reproduce_all.py`. |"
+        "| **Explicit Rule & Constraint Router** | `CI-reproduced` | Evaluated across 3 trials on 160 `dev` items; verified via `reproduce_all.py`. |"
     )
     lines.append(
-        "| **Stage 1 Declared Privacy Interception** | `Externally reproduced` | 100% interception of `confidential_private` and `internal` prompts (HTTP 403 / local). |"
+        "| **Stage 1 Declared Privacy Interception** | `CI-reproduced` | 100% interception of `confidential_private` and `internal` prompts (HTTP 403 / local). |"
     )
     lines.append(
         "| **Adversarial Pattern DLP Detection** | `Offline-evaluated` | 20 adversarial probes: 100% precision, 38.5% FNR under obfuscation. Documented as defense-in-depth only. |"
@@ -106,7 +106,7 @@ def generate_results_markdown() -> str:
         "| **Real-World Multi-Provider Cost Reduction** | `Not validated` | Live commercial multi-provider evaluation is ongoing; no qualifying full real split published yet. |"
     )
     lines.append(
-        "| **Exact Caching & TTL Purge** | `Externally reproduced` | SQLite storage, TTL expiration, purge routine, and 7 workload traces verified in unit & trace tests. |"
+        "| **Exact Caching & TTL Purge** | `CI-reproduced` | SQLite storage, TTL expiration, purge routine, and 7 workload traces verified in unit & trace tests. |"
     )
     lines.append(
         "| **Distributed Rate Limiting** | `Implemented & Unit-tested` | In-memory token bucket verified in CI; multi-node Redis architecture documented for Mode 3 production. |"

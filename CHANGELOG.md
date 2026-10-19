@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Workload Trace Caching Analysis**: Evaluated cache hit rates and latency speedups across 7 distinct workload profiles (`data/results/caching_workload_analysis.json`).
 - **Dynamic Model & Provider Drift Registry**: Dynamic registry tracking model capabilities, latency spikes, and pricing shocks (`data/results/drift_evaluation.json`).
 - **One-Command Master Reproduction Pipeline**: Created `scripts/reproduce_all.py` executing all 12 evaluation stages in ~89s with SHA-256 provenance manifest verification (`data/results/fixtures/sanitized_public_manifest.json`).
-- **Status Classification Taxonomy**: Introduced 6-tier capability and validation classification (`Implemented`, `Unit-tested`, `Offline-evaluated`, `Externally reproduced`, `Real-provider validated`, `Production-observed`) in `README.md` and `docs/claims_and_evidence.md`.
+- **Status Classification Taxonomy**: Introduced 6-tier capability and validation classification (`Implemented`, `Unit-tested`, `Offline-evaluated`, `CI-reproduced`, `Real-provider validated`, `Production-observed`) in `README.md` and `docs/claims_and_evidence.md`.
 
 ### Changed
 - **Secure Code Evaluation Sandbox**: Refactored `evaluate_code_execution_and_syntax` to execute generated Python code and unit test assertions inside an isolated child subprocess with `-I` (isolated mode), temporary disposable working directory, and a strict 2.0-second timeout guard.

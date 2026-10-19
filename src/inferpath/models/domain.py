@@ -32,10 +32,16 @@ class UserRequest(BaseModel):
     task_parameters: TaskParameters = Field(default_factory=TaskParameters)
     context_hash: str | None = None
     privacy_class: PrivacyClass = PrivacyClass.PUBLIC
-    allow_external_transmission: bool = False
+    allow_external_transmission: bool | None = None
     is_time_sensitive: bool | None = None  # None indicates automatic detection needed
     user_scope: str = "default"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def set_default_external_transmission(self) -> "UserRequest":
+        if self.allow_external_transmission is None:
+            self.allow_external_transmission = self.privacy_class == PrivacyClass.PUBLIC
+        return self
 
     @property
     def quality(self) -> str:
@@ -146,8 +152,8 @@ class HandlerOutput(BaseModel):
     needs_clarification: bool = False
     clarification_prompt: str | None = None
     clarification_request: ClarificationRequest | None = None
-    input_tokens: ProvenanceValue[int]
-    output_tokens: ProvenanceValue[int]
+    input_tokens: ProvenanceValue[int | None]
+    output_tokens: ProvenanceValue[int | None]
     latency_ms: ProvenanceValue[float]
     time_to_first_token_ms: ProvenanceValue[float] | None = None
     model_version: str
@@ -202,8 +208,8 @@ class PipelineResult(BaseModel):
     cost_usd: ProvenanceValue[float]
     energy_wh: ProvenanceValue[float]
     water_ml: ProvenanceValue[float]
-    input_tokens: ProvenanceValue[int] | None = None
-    output_tokens: ProvenanceValue[int] | None = None
+    input_tokens: ProvenanceValue[int | None] | None = None
+    output_tokens: ProvenanceValue[int | None] | None = None
     provider_reported_cost_usd: ProvenanceValue[float] | None = None
     privacy_class: PrivacyClass
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
