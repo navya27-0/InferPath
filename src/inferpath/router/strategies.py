@@ -822,7 +822,61 @@ class OracleRouter(BaseRouter):
     Used as the theoretical benchmark against which empirical routing regret is measured.
     """
 
+    def __init__(
+        self,
+        routing_settings: RoutingSettings | None = None,
+        privacy_enforcer: PrivacyPolicyEnforcer | None = None,
+        logger: ExperimentLogger | None = None,
+        pricing_table: PricingTable | None = None,
+        ground_truth_labels: dict[str, RouteTier] | None = None,
+    ):
+        super().__init__(
+            routing_settings=routing_settings,
+            privacy_enforcer=privacy_enforcer,
+            logger=logger,
+            pricing_table=pricing_table,
+        )
+        self.ground_truth_labels: dict[str, RouteTier] = ground_truth_labels or {}
+
     def route(self, request: UserRequest) -> RoutingDecision:
+        # Check independent ground truth labels first to eliminate evaluation circularity
+        gt_tier = self.ground_truth_labels.get(request.request_id) or self.ground_truth_labels.get(
+            request.prompt
+        )
+        if gt_tier is not None:
+            if request.privacy_class in (
+                PrivacyClass.INTERNAL,
+                PrivacyClass.CONFIDENTIAL_PRIVATE,
+            ):
+                can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+                    request, gt_tier
+                )
+                if not can_transmit:
+                    decision = RoutingDecision(
+                        selected_tier=RouteTier.DETERMINISTIC_A,
+                        eligible_tiers=[],
+                        rule_id="R01",
+                        confidence=1.0,
+                        reason=reason
+                        or f"Privacy policy violation: {request.privacy_class.value} cannot be transmitted externally.",
+                        time_sensitive=False,
+                        cache_eligible=False,
+                    )
+                    self._log_decision_safely(request, decision)
+                    return decision
+
+            decision = RoutingDecision(
+                selected_tier=gt_tier,
+                eligible_tiers=[gt_tier],
+                rule_id="ORACLE_GROUND_TRUTH",
+                confidence=1.0,
+                reason="Independent ground-truth ex-post optimal tier.",
+                time_sensitive=bool(request.is_time_sensitive),
+                cache_eligible=(request.privacy_class == PrivacyClass.PUBLIC),
+            )
+            self._log_decision_safely(request, decision)
+            return decision
+
         # Step 1: Privacy Invariant Check
         if request.privacy_class in (
             PrivacyClass.INTERNAL,

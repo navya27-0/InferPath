@@ -85,8 +85,19 @@ class UserRequest(BaseModel):
         }
 
 
+class PrivacyDecision(BaseModel):
+    """Explicit privacy decision governing execution, external transmission, caching, and auditing."""
+
+    allow_local_processing: bool = True
+    allow_external_transmission: bool = False
+    allow_cache: bool = False
+    allow_prompt_preview: bool = False
+    allow_telemetry: bool = True
+    reason: str | None = None
+
+
 class RoutingDecision(BaseModel):
-    """The decision made during Stage 3 (Analyze and Select Eligible Route)."""
+    """The decision made during Step 3 (Analyze and Select Eligible Route)."""
 
     selected_tier: RouteTier
     route: RouteTier | None = None
@@ -189,7 +200,7 @@ class FallbackRecord(BaseModel):
 
 
 class PipelineResult(BaseModel):
-    """Final artifact emitted by the 9-stage pipeline."""
+    """Final artifact emitted by the 11-step request lifecycle pipeline."""
 
     request_id: str
     prompt_hash: str
@@ -206,11 +217,18 @@ class PipelineResult(BaseModel):
     route_trace: list[dict[str, Any]] = Field(default_factory=list)
     total_latency_ms: ProvenanceValue[float]
     cost_usd: ProvenanceValue[float]
-    energy_wh: ProvenanceValue[float]
-    water_ml: ProvenanceValue[float]
+    energy_wh: ProvenanceValue[float | None]
+    water_ml: ProvenanceValue[float | None]
     input_tokens: ProvenanceValue[int | None] | None = None
     output_tokens: ProvenanceValue[int | None] | None = None
     provider_reported_cost_usd: ProvenanceValue[float] | None = None
+    estimated_call_cost_usd: ProvenanceValue[float] | None = None
+    actual_calculated_cost_usd: ProvenanceValue[float] | None = None
+    constraints_satisfied: bool = True
+    unsatisfied_constraints: list[str] = Field(default_factory=list)
+    requested_minimum_quality: float | None = None
+    requested_maximum_cost_usd: float | None = None
+    requested_maximum_latency_ms: float | None = None
     privacy_class: PrivacyClass
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

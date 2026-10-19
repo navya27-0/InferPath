@@ -37,8 +37,23 @@ def compute_dict_sha256(data: dict[str, Any]) -> str:
 
 def sanitize_run_manifest(raw_manifest: dict[str, Any]) -> dict[str, Any]:
     """Generates a public, privacy-safe manifest from an evaluation run."""
+    is_fixture = (
+        raw_manifest.get("is_fixture")
+        or raw_manifest.get("adapter_mode") == "fixture"
+        or raw_manifest.get("artifact_type") == "fixture"
+    )
     sanitized = {
         "manifest_version": "2.0.0",
+        "artifact_type": raw_manifest.get(
+            "artifact_type", "fixture" if is_fixture else "benchmark_run"
+        ),
+        "provenance": raw_manifest.get(
+            "provenance", "simulated_fixture" if is_fixture else "measured"
+        ),
+        "real_provider_run": bool(raw_manifest.get("real_provider_run", False)),
+        "source": raw_manifest.get(
+            "source", "synthetic_test_data" if is_fixture else "evaluation_pipeline"
+        ),
         "run_id": raw_manifest.get("run_id", "unknown_run"),
         "timestamp": raw_manifest.get("timestamp"),
         "adapter_mode": raw_manifest.get("adapter_mode", "simulated"),

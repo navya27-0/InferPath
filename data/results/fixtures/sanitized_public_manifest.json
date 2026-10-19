@@ -1,5 +1,9 @@
 {
   "manifest_version": "2.0.0",
+  "artifact_type": "fixture",
+  "provenance": "simulated_fixture",
+  "real_provider_run": false,
+  "source": "synthetic_test_data",
   "run_id": "run_fixture_evaluation_pilot",
   "timestamp": null,
   "adapter_mode": "fixture",

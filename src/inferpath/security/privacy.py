@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from inferpath.models.domain import UserRequest
+from inferpath.models.domain import PrivacyDecision, UserRequest
 from inferpath.models.enums import PrivacyClass, RouteTier
 from inferpath.security.hashing import hash_prompt, hash_text, scrub_api_keys
 
@@ -68,89 +68,100 @@ class PrivacyPolicyEnforcer:
                 "allow_redacted_transmission_override": False,
             }
 
-    def can_transmit_externally(
-        self, request: UserRequest, target_tier: RouteTier
-    ) -> tuple[bool, str | None]:
-        """Determines whether a request may be sent to an external model API (Tiers C or D).
+    def evaluate_privacy(
+        self, request: UserRequest, allow_preview_in_profile: bool = True
+    ) -> PrivacyDecision:
+        """Computes a unified, unambiguous PrivacyDecision across routing, caching, logging, and fallback."""
+        from inferpath.router.analyzer import SENSITIVE_CONTENT_PATTERNS
 
-        Deterministic (Tier A) and local Template (Tier B) executions are local and do not transmit data externally.
-        """
-        # Local tiers do not invoke external APIs
-        if target_tier in (RouteTier.DETERMINISTIC_A, RouteTier.TEMPLATE_B):
-            return True, None
+        text_items = [request.prompt]
+        if request.context:
+            text_items.append(request.context)
+        if request.metadata:
+            text_items.extend(f"{k}: {v}" for k, v in request.metadata.items())
+        combined = " \n ".join(text_items)
+        has_sensitive_pattern = any(
+            pattern.search(combined) for pattern in SENSITIVE_CONTENT_PATTERNS
+        )
 
-        # Check explicit privacy classification
-        if request.privacy_class in (
+        is_private = request.privacy_class in (
             PrivacyClass.INTERNAL,
             PrivacyClass.CONFIDENTIAL_PRIVATE,
-        ):
+        )
+        is_local_only = bool(
+            request.metadata.get("local_only", False)
+            or (request.allow_external_transmission is False)
+        )
+
+        if is_private:
             override_allowed = self.approved_exceptions.get(
                 "allow_redacted_transmission_override", False
             )
-            if request.allow_external_transmission and override_allowed:
-                return True, None
-            return (
-                False,
-                f"Transmission blocked: Privacy classification '{request.privacy_class.value}' "
-                f"strictly prohibits external transmission to external model tier '{target_tier.value}'.",
+            ext_tx = bool(request.allow_external_transmission and override_allowed)
+            return PrivacyDecision(
+                allow_local_processing=True,
+                allow_external_transmission=ext_tx,
+                allow_cache=False,
+                allow_prompt_preview=False,
+                allow_telemetry=True,
+                reason=f"Privacy classification '{request.privacy_class.value}' strictly prohibits external transmission without an approved override exception; caching prohibited.",
             )
 
-        # Defense-in-depth: inspect for credentials and sensitive patterns even if marked public
-        from inferpath.router.analyzer import SENSITIVE_CONTENT_PATTERNS
+        if has_sensitive_pattern:
+            return PrivacyDecision(
+                allow_local_processing=True,
+                allow_external_transmission=False,
+                allow_cache=False,
+                allow_prompt_preview=False,
+                allow_telemetry=True,
+                reason="Sensitive content detected (PII or credential pattern); external transmission and caching prohibited.",
+            )
 
-        text_items = [request.prompt]
-        if request.context:
-            text_items.append(request.context)
-        if request.metadata:
-            text_items.extend(f"{k}: {v}" for k, v in request.metadata.items())
-        combined = " \n ".join(text_items)
+        if is_local_only:
+            return PrivacyDecision(
+                allow_local_processing=True,
+                allow_external_transmission=False,
+                allow_cache=True,
+                allow_prompt_preview=allow_preview_in_profile,
+                allow_telemetry=True,
+                reason="Caller requested local-only execution; external transmission prohibited.",
+            )
 
-        for pattern in SENSITIVE_CONTENT_PATTERNS:
-            if pattern.search(combined):
-                return (
-                    False,
-                    f"Transmission blocked: Sensitive content detected in request; "
-                    f"strictly prohibits external transmission to external model tier '{target_tier.value}'.",
-                )
+        # Public, no sensitive patterns, external allowed
+        return PrivacyDecision(
+            allow_local_processing=True,
+            allow_external_transmission=True,
+            allow_cache=True,
+            allow_prompt_preview=allow_preview_in_profile,
+            allow_telemetry=True,
+            reason="Public request; local execution, external transmission, and caching permitted.",
+        )
 
+    def can_transmit_externally(
+        self, request: UserRequest, target_tier: RouteTier
+    ) -> tuple[bool, str | None]:
+        """Determines whether a request may be sent to an external model API (Tiers C or D)."""
+        decision = self.evaluate_privacy(request)
+        if target_tier in (RouteTier.DETERMINISTIC_A, RouteTier.TEMPLATE_B):
+            return decision.allow_local_processing, None
+        if not decision.allow_external_transmission:
+            return False, decision.reason
         return True, None
 
     def is_cache_permitted(self, request: UserRequest) -> bool:
-        """Enforces privacy rule: Private or confidential requests are NEVER cached.
+        """Enforces privacy rule: Private or sensitive requests are NEVER cached."""
+        decision = self.evaluate_privacy(request)
+        return decision.allow_cache
 
-        Only strictly PUBLIC data without sensitive tokens may enter the cache.
-        """
-        if request.privacy_class != PrivacyClass.PUBLIC:
-            return False
-
-        from inferpath.router.analyzer import SENSITIVE_CONTENT_PATTERNS
-
-        text_items = [request.prompt]
-        if request.context:
-            text_items.append(request.context)
-        if request.metadata:
-            text_items.extend(f"{k}: {v}" for k, v in request.metadata.items())
-        combined = " \n ".join(text_items)
-
-        return all(not pattern.search(combined) for pattern in SENSITIVE_CONTENT_PATTERNS)
-
-    def sanitize_for_audit(self, request: UserRequest) -> dict[str, Any]:
-        """
-        Sanitizes request metadata for SQLite and JSONL audit logging.
-        Never outputs raw prompt text for non-public requests; records SHA-256 digest only.
-        Protects against prompt leakage in metadata and strips API key patterns.
-        """
+    def sanitize_for_audit(
+        self, request: UserRequest, allow_preview_in_profile: bool = True
+    ) -> dict[str, Any]:
+        """Sanitizes request metadata for SQLite and JSONL audit logging."""
         prompt_digest = hash_prompt(request.prompt)
-
-        # Only public requests without sensitive patterns may have truncated preview samples stored
-        from inferpath.router.analyzer import contains_sensitive_patterns
-
-        if request.privacy_class == PrivacyClass.PUBLIC and not contains_sensitive_patterns(
-            request.prompt
-        ):
-            prompt_sample = scrub_api_keys(request.prompt[:120])
-        else:
-            prompt_sample = None  # Strictly null for internal/private or sensitive
+        decision = self.evaluate_privacy(request, allow_preview_in_profile=allow_preview_in_profile)
+        prompt_sample = (
+            scrub_api_keys(request.prompt[:120]) if decision.allow_prompt_preview else None
+        )
 
         # Scrub metadata of credentials and private prompt content
         clean_metadata: dict[str, Any] = {}

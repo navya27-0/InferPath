@@ -1,4 +1,8 @@
 {
+  "artifact_type": "fixture",
+  "provenance": "simulated_fixture",
+  "real_provider_run": false,
+  "source": "synthetic_test_data",
   "timestamp": "2026-10-16T15:30:00Z",
   "sample_size": 20,
   "repeats": 2,
@@ -7,7 +11,6 @@
   "is_fixture": true,
   "live_network_calls": false,
   "adapter_mode": "fixture",
-  "provenance": "synthetic_fixture",
   "pricing_table_date": "2026-10-01",
   "provider": "openrouter",
   "small_model_id": "google/gemini-2.5-flash",

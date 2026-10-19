@@ -102,3 +102,41 @@ def test_privacy_external_transmission_combinations():
     feasible_conf = policy.determine_feasible_set(req_confidential)
     assert RouteTier.SMALL_MODEL_C not in feasible_conf
     assert RouteTier.LARGE_MODEL_D not in feasible_conf
+
+
+def test_local_only_metadata_excludes_external_tiers():
+    policy = ConstrainedOptimizationPolicy()
+    req = UserRequest(
+        request_id="req_local_meta",
+        prompt="What is the capital of France?",
+        privacy_class=PrivacyClass.PUBLIC,
+        metadata={"local_only": True},
+        task_parameters=TaskParameters(minimum_quality=0.60),
+    )
+    feasible = policy.determine_feasible_set(req)
+    assert RouteTier.SMALL_MODEL_C not in feasible
+    assert RouteTier.LARGE_MODEL_D not in feasible
+
+
+def test_unsatisfiable_constraints_raises_error():
+    import pytest
+
+    from inferpath.router.strategies import ConstraintsUnsatisfiableError
+
+    policy = ConstrainedOptimizationPolicy()
+    req = UserRequest(
+        request_id="req_impossible",
+        prompt="Explain quantum gravity in detail.",
+        privacy_class=PrivacyClass.PUBLIC,
+        task_parameters=TaskParameters(
+            minimum_quality=0.999,
+            maximum_cost_usd=0.0000001,
+            maximum_latency_ms=0.1,
+        ),
+    )
+    feasible = policy.determine_feasible_set(req)
+    assert feasible == []
+
+    with pytest.raises(ConstraintsUnsatisfiableError) as exc_info:
+        policy.select_optimal_tier(req)
+    assert "quality" in exc_info.value.unsatisfied_constraints

@@ -19,6 +19,7 @@ from inferpath.models.domain import (
     UserRequest,
 )
 from inferpath.models.enums import PrivacyClass, ProvenanceLabel, RouteTier
+from inferpath.models.registry import ModelRegistry
 from inferpath.models.telemetry import ProvenanceValue
 from inferpath.pipeline_stages import CostAccumulator, FallbackCoordinator, ResultFinalizer
 from inferpath.router import BaseRouter, RuleBasedRouter
@@ -69,12 +70,14 @@ class RequestPipeline:
         adapter_mode: str | None = None,
         allow_mock_fallback: bool | None = None,
         adapter_factory: type[AdapterFactory] | AdapterFactory | None = None,
+        model_registry: ModelRegistry | None = None,
     ):
         self.settings = settings or load_settings()
         self.pricing_table = pricing_table or load_pricing_table()
         self.adapter_mode = adapter_mode
         self.allow_mock_fallback = allow_mock_fallback if allow_mock_fallback is not None else True
         self.adapter_factory = adapter_factory or AdapterFactory
+        self.model_registry = model_registry or ModelRegistry()
 
         # Resolve credentials from SecretManager if not present in settings
         if not self.settings.openrouter.api_key:
@@ -122,6 +125,7 @@ class RequestPipeline:
             privacy_enforcer=self.privacy_enforcer,
             large_model_id=large_model_id,
             budget_tracker=self.budget_tracker,
+            model_registry=self.model_registry,
         )
         self.finalizer = ResultFinalizer(self.estimator)
 

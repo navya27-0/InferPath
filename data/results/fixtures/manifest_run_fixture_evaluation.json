@@ -1,7 +1,10 @@
 {
+  "artifact_type": "fixture",
+  "provenance": "simulated_fixture",
+  "real_provider_run": false,
+  "source": "synthetic_test_data",
   "run_id": "run_fixture_evaluation_pilot",
   "adapter_mode": "fixture",
-  "provenance": "synthetic_fixture",
   "is_fixture": true,
   "live_network_calls": false,
   "split": "dev",

@@ -12,7 +12,15 @@ from inferpath.models.domain import HandlerOutput, UserRequest
 from inferpath.models.enums import PrivacyClass, RouteTier
 from inferpath.security.hashing import scrub_api_keys
 
+CURRENT_SCHEMA_VERSION = 1
+
 CACHE_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO schema_version (version) VALUES (1);
+
 CREATE TABLE IF NOT EXISTS exact_cache (
     cache_key TEXT PRIMARY KEY,
     normalized_prompt TEXT NOT NULL,
@@ -102,6 +110,21 @@ class ExactCache:
             await db.execute("PRAGMA journal_mode=WAL;")
             await db.executescript(CACHE_SCHEMA_SQL)
             await db.commit()
+
+    def get_schema_version(self) -> int:
+        """Returns the current database schema version."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(version) FROM schema_version")
+            row = cursor.fetchone()
+            return int(row[0]) if row and row[0] is not None else 0
+
+    async def get_schema_version_async(self) -> int:
+        """Asynchronously returns the current database schema version."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT MAX(version) FROM schema_version")
+            row = await cursor.fetchone()
+            return int(row[0]) if row and row[0] is not None else 0
 
     def lookup(self, cache_key: str) -> HandlerOutput | None:
         """

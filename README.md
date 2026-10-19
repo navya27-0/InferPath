@@ -50,31 +50,32 @@ The Mermaid diagram below reflects the implemented execution pipeline (`inferpat
 
 ```mermaid
 flowchart TD
-    Req([User Request]) --> Stage1[1. Input Normalization & Privacy Check]
-    Stage1 -->|Confidential / Internal Policy Violation| Block[HTTP 403 Privacy Interception]
-    Stage1 -->|Valid| Stage2[2. Freshness & Time-Sensitivity Detection]
-    Stage2 --> Stage3[3. Rule-Based Route Analysis]
-    Stage3 --> Stage4[4. Canonical Cache Key Computation]
-    Stage4 --> CacheCheck{Cache Eligible?}
-    CacheCheck -->|Yes| CacheLookup[5. SQLite Exact Cache Lookup]
+    Req([User Request]) --> Step1[1. Request Schema & Constraints Validation]
+    Step1 --> Step2[2. Privacy Policy Enforcement]
+    Step2 -->|Confidential / Internal Policy Violation| Block[HTTP 403 Privacy Interception]
+    Step2 -->|Valid| Step3[3. Freshness & Time-Sensitivity Detection]
+    Step3 --> Step4[4. Constrained Optimization Route Selection]
+    Step4 --> Step5[5. Canonical Cache Key Computation & Eligibility]
+    Step5 --> CacheCheck{Cache Eligible?}
+    CacheCheck -->|Yes| CacheLookup[6. SQLite Exact Cache Lookup]
     CacheCheck -->|No: Freshness / Deterministic / Private| TierExec
     CacheLookup -->|Hit| CacheReturn([Cached Response])
-    CacheLookup -->|Miss| TierExec[6. Tier Handler Execution]
+    CacheLookup -->|Miss| TierExec[7. Tier Handler Execution]
     TierExec --> PathA[Tier A: Deterministic Rules & Units]
     TierExec --> PathB[Tier B: Template Slot Filler]
     TierExec --> PathC[Tier C: Small Model Adapter]
     TierExec --> PathD[Tier D: Large Model Adapter]
-    PathA --> Val[7. Deterministic Output Validation]
+    PathA --> Val[8. Deterministic Output Validation]
     PathB --> Val
     PathC --> Val
     PathD --> Val
     Val -->|Passed| CacheStore{Store in Cache?}
-    Val -->|Failed & Tier C| Fallback[8. Single-Level Fallback to Tier D]
+    Val -->|Failed & Tier C| Fallback[9. Bounded Single-Level Fallback to Tier D]
     Fallback --> Val2[Re-validate Large Model Output]
     Val2 --> CacheStore
-    CacheStore -->|Eligible & Valid| SaveCache[(Update SQLite Exact Cache)]
+    CacheStore -->|Eligible & Valid| SaveCache[(10. Update SQLite Exact Cache)]
     CacheStore -->|Ineligible / Private| Telemetry
-    SaveCache --> Telemetry[9. Telemetry & Experiment Logging]
+    SaveCache --> Telemetry[11. Telemetry & Experiment Logging]
     Telemetry --> Resp([Structured Response & Audit Record])
 ```
 
@@ -142,6 +143,84 @@ curl -s -X POST http://127.0.0.1:8000/v1/respond \
 
 > **Default Safety Invariant**: Without an explicit `OPENROUTER_API_KEY` set in `.env`, InferPath automatically initializes deterministic `MockSmallModel` and `MockLargeModel` adapters. No paid network requests can occur inadvertently.
 
+### API Request & Response Lifecycle
+
+#### Successful Request with Telemetry & Provenance
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/respond \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Convert 25°C to Fahrenheit",
+    "privacy_class": "public",
+    "minimum_quality": 0.8,
+    "maximum_cost_usd": 0.01,
+    "maximum_latency_ms": 500.0
+  }'
+```
+
+```json
+{
+  "request_id": "req_8bf29e4d1a2c",
+  "text": "77°F",
+  "route": "deterministic_a",
+  "rule_id": "R04",
+  "cache_hit": false,
+  "validated": true,
+  "fallback_used": false,
+  "needs_clarification": false,
+  "clarification_prompt": null,
+  "cost_usd": 0.0,
+  "cost_provenance": "calculated",
+  "latency_ms": 0.08,
+  "latency_provenance": "measured",
+  "route_trace": [
+    {"stage": "rule_evaluation", "rule_id": "R04", "selected_tier": "deterministic_a"}
+  ],
+  "input_tokens": 0,
+  "input_tokens_provenance": "measured",
+  "output_tokens": 0,
+  "output_tokens_provenance": "measured",
+  "provider_reported_cost_usd": null,
+  "energy_wh": 0.0,
+  "energy_provenance": "calculated",
+  "water_ml": 0.0,
+  "water_provenance": "calculated",
+  "constraints_satisfied": true,
+  "unsatisfied_constraints": [],
+  "requested_minimum_quality": 0.8,
+  "requested_maximum_cost_usd": 0.01,
+  "requested_maximum_latency_ms": 500.0,
+  "estimated_call_cost_usd": 0.0,
+  "actual_calculated_cost_usd": 0.0
+}
+```
+
+#### Constraint Failure Diagnostics (HTTP 422)
+When user-specified constraints cannot be met by any registered tier, InferPath immediately returns HTTP 422:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/respond \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Synthesize a formal proof",
+    "minimum_quality": 0.99,
+    "maximum_latency_ms": 10.0
+  }'
+```
+
+```json
+{
+  "error": "Constraints unsatisfiable",
+  "detail": "Constraints cannot be satisfied: quality requirement (0.99) exceeds all available tiers; latency budget (10.0ms) cannot be met by capable tiers.",
+  "code": "CONSTRAINTS_UNSATISFIABLE",
+  "unsatisfied_constraints": [
+    "quality: requested 0.99 > max tier prior 0.94",
+    "latency: requested 10.0ms < min tier latency 25.0ms"
+  ],
+  "eligible_tiers": []
+}
+```
+
 ---
 
 ## 4. Evaluation Results
@@ -152,6 +231,8 @@ The evaluation artifacts under `data/results/` are organized into distinct categ
 - **`data/results/simulated_test/`**: Diagnostic held-out (`test`) split runs evaluating mock adapter coverage and task family generalization.
 - **`data/results/benchmarks/`**: Real ASGI system-level concurrency, throughput (RPS), and latency distribution benchmarks across worker pools.
 - **`data/results/fixtures/`**: Static synthetic reference fixtures conforming to schema protocols, used exclusively for hermetic offline unit tests, regression suites, and CI validation without network dependencies.
+  > [!WARNING]
+  > **Fixture Provenance**: All artifacts in `data/results/fixtures/` carry `"artifact_type": "fixture"`, `"provenance": "simulated_fixture"`, and `"real_provider_run": false`. They are synthetic test fixtures and must **never** be cited or reported as empirical live-provider benchmark evidence.
 - **`data/results/real/`**: Reserved exclusively for genuine, measured empirical evaluation runs against live commercial model endpoints (e.g., OpenRouter API) recorded with frozen timestamps, network call latencies, and token expenditures. Synthetic fixtures are strictly prohibited in this directory.
 
 <!-- RESULTS_TABLE_START -->
@@ -432,7 +513,7 @@ InferPath/
 4. **Counterfactual Quality Bounds**: Counterfactual Always-Large comparisons compute economic cost based on token counts and the dated pricing schedule (`2026-10-01`). Unexecuted models cannot be graded for quality or latency without executing live requests.
 5. **Heuristic Output Validation**: Deterministic output validators rely on structural schemas, regex, and non-empty checks. Semantic hallucination detection on open-ended creative tasks requires human or LLM judge grading.
 6. **Process-Local Rate Limiting & Horizontal Scaling**: The default `RateLimiter` enforces sliding-window rate limiting in local worker memory. In horizontally scaled multi-worker or multi-replica production deployments, `DistributedRateLimiter` (via `REDIS_URL` / Redis sorted sets) or an upstream API gateway (e.g. Envoy/Kong) must be configured to coordinate global client quotas.
-7. **Monolithic Pipeline Orchestration**: While shared helpers and `AdapterFactory` modularize adapter construction, validation, caching, and fallback policies, `RequestPipeline` still orchestrates all execution steps within a single service class. Future refactoring milestones target independent pipeline stage handlers.
+7. **Modular Pipeline Stage Orchestration**: The 11-step request lifecycle decouples discrete concerns into independent modular handlers (`CostAccumulator`, `FallbackCoordinator`, `ResultFinalizer`, `PrivacyPolicyEnforcer`), coordinated by `RequestPipeline`. Future extensions can introduce dynamic DAG-based pluggable stage middleware.
 8. **Real-Provider Evaluation Scope**: Live OpenRouter evaluation is established as an audited, budget-capped pilot runner with explicit provenance tracking (`data/results/real/`). It constitutes exploratory validation; large-scale multi-hundred-item frozen provider benchmarks remain necessary for generalized cross-provider performance claims.
 9. **Operational Infrastructure Scope**: While secret management hierarchies, structured JSON logging, and OpenTelemetry W3C tracing are built into the runtime, centralized log aggregation (e.g. Grafana Loki/FluentBit), external metrics push gateways, and Kubernetes deployment charts remain operational concerns managed outside the core repository.
 

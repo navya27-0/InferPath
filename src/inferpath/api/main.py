@@ -75,6 +75,13 @@ class RespondResponse(BaseModel):
     energy_provenance: str | None = None
     water_ml: float | None = None
     water_provenance: str | None = None
+    constraints_satisfied: bool = True
+    unsatisfied_constraints: list[str] = Field(default_factory=list)
+    requested_minimum_quality: float | None = None
+    requested_maximum_cost_usd: float | None = None
+    requested_maximum_latency_ms: float | None = None
+    estimated_call_cost_usd: float | None = None
+    actual_calculated_cost_usd: float | None = None
 
 
 def _constant_time_compare(val_a: str | None, val_b: str | None) -> bool:
@@ -279,6 +286,7 @@ def create_app(
 
         return JSONResponse(
             status_code=exc.status_code,
+            headers=exc.headers,
             content={
                 "error": error,
                 "detail": scrub_api_keys(str(detail)),
@@ -296,6 +304,58 @@ def create_app(
             "deployment_mode": dep_mode,
             "profile": active_profile.name.value,
             "rate_limiter": app.state.rate_limiter_status,
+        }
+
+    @app.get("/health/live")
+    @app.get("/v1/health/live")
+    async def health_live():
+        return {
+            "status": "alive",
+            "service": "inferpath",
+            "version": __version__,
+        }
+
+    @app.get("/health/ready")
+    @app.get("/v1/health/ready")
+    async def health_ready():
+        return {
+            "status": "ready",
+            "service": "inferpath",
+            "version": __version__,
+            "deployment_mode": dep_mode,
+            "profile": active_profile.name.value,
+            "rate_limiter": app.state.rate_limiter_status,
+        }
+
+    @app.get("/health/dependencies")
+    @app.get("/v1/health/dependencies")
+    async def health_dependencies():
+        schema_version = 0
+        db_status = "ok"
+        try:
+            if hasattr(pipeline_instance, "cache") and hasattr(
+                pipeline_instance.cache, "get_schema_version"
+            ):
+                schema_version = pipeline_instance.cache.get_schema_version()
+        except Exception as e:
+            db_status = f"degraded: {e}"
+
+        return {
+            "status": "healthy" if db_status == "ok" else "degraded",
+            "dependencies": {
+                "cache_database": {
+                    "status": db_status,
+                    "schema_version": schema_version,
+                },
+                "rate_limiter": {
+                    "backend": app.state.rate_limiter_status,
+                    "rpm": limiter.requests_per_minute,
+                },
+                "pipeline": {
+                    "adapter_mode": active_profile.adapter_mode,
+                    "allow_mock_fallback": active_profile.allow_mock_fallback,
+                },
+            },
         }
 
     @app.get("/metrics")
@@ -343,14 +403,27 @@ def create_app(
             client_ip = peer_ip
 
         if not limiter.is_allowed(client_ip):
+            headers = {
+                "X-RateLimit-Limit": str(limiter.requests_per_minute),
+                "X-RateLimit-Remaining": "0",
+                "Retry-After": "60",
+            }
             raise HTTPException(
                 status_code=429,
+                headers=headers,
                 detail={
                     "error": "Rate limit exceeded",
                     "detail": f"Maximum {limiter.requests_per_minute} requests per minute allowed.",
                     "code": "RATE_LIMIT_EXCEEDED",
                 },
             )
+
+        # Populate rate limit response headers
+        remaining_quota = (
+            limiter.get_remaining(client_ip) if hasattr(limiter, "get_remaining") else 0
+        )
+        response.headers["X-RateLimit-Limit"] = str(limiter.requests_per_minute)
+        response.headers["X-RateLimit-Remaining"] = str(remaining_quota)
 
         # 3. Payload validation
         if not body.prompt or not body.prompt.strip():
@@ -531,6 +604,17 @@ def create_app(
                 energy_provenance=result.energy_wh.provenance.value if result.energy_wh else None,
                 water_ml=result.water_ml.value if result.water_ml else None,
                 water_provenance=result.water_ml.provenance.value if result.water_ml else None,
+                constraints_satisfied=result.constraints_satisfied,
+                unsatisfied_constraints=result.unsatisfied_constraints,
+                requested_minimum_quality=result.requested_minimum_quality,
+                requested_maximum_cost_usd=result.requested_maximum_cost_usd,
+                requested_maximum_latency_ms=result.requested_maximum_latency_ms,
+                estimated_call_cost_usd=result.estimated_call_cost_usd.value
+                if result.estimated_call_cost_usd
+                else None,
+                actual_calculated_cost_usd=result.actual_calculated_cost_usd.value
+                if result.actual_calculated_cost_usd
+                else None,
             )
 
     return app

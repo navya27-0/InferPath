@@ -90,9 +90,12 @@ class ConstrainedOptimizationPolicy:
         - Caller latency deadlines
         - Minimum acceptable quality prior
         """
-        is_sensitive = (
-            request.privacy_class != PrivacyClass.PUBLIC or not request.allow_external_transmission
+        is_private = request.privacy_class != PrivacyClass.PUBLIC
+        is_local_only = bool(
+            request.metadata.get("local_only", False)
+            or (request.allow_external_transmission is False)
         )
+        is_sensitive = is_private or is_local_only
 
         prompt_lower = request.prompt.lower()
         has_math_or_regex = any(
@@ -145,12 +148,38 @@ class ConstrainedOptimizationPolicy:
 
             feasible.append(tier)
 
-        # Fallback guarantee: if feasible set is empty due to over-constrained parameters,
-        # return highest-capability privacy-compliant tier
-        if not feasible:
-            feasible = [RouteTier.DETERMINISTIC_A] if is_sensitive else [RouteTier.LARGE_MODEL_D]
-
         return feasible
+
+    def diagnose_unsatisfied_constraints(self, request: UserRequest) -> list[str]:
+        """Identifies which caller constraints caused candidate tier pruning."""
+        unsatisfied = []
+        min_qual = request.minimum_quality
+        max_cost = request.maximum_cost_usd
+        max_lat = request.maximum_latency_ms
+        is_sensitive = (
+            request.privacy_class != PrivacyClass.PUBLIC
+            or request.allow_external_transmission is False
+            or bool(request.metadata.get("local_only", False))
+        )
+        max_prior_qual = max(p.quality_prior for p in self.priors.values())
+        if min_qual > max_prior_qual:
+            unsatisfied.append("quality")
+        if max_cost is not None and all(
+            p.estimated_cost_per_1k > max_cost for p in self.priors.values()
+        ):
+            unsatisfied.append("budget")
+        if max_lat is not None and all(
+            p.estimated_latency_ms > max_lat for p in self.priors.values()
+        ):
+            unsatisfied.append("latency")
+        if is_sensitive and not any(
+            kw in request.prompt.lower()
+            for kw in ["calculate", "evaluate", "convert", "date", "time", "+", "-", "*", "/"]
+        ):
+            unsatisfied.append("privacy")
+        if not unsatisfied:
+            unsatisfied.append("constraints_incompatible")
+        return unsatisfied
 
     def compute_objective_score(self, tier: RouteTier) -> float:
         """Stage 2: Scalarized objective function J(m, x).
@@ -167,8 +196,21 @@ class ConstrainedOptimizationPolicy:
         return loss
 
     def select_optimal_tier(self, request: UserRequest) -> tuple[RouteTier, list[RouteTier], float]:
-        """Finds tier m* in Feasible(x) that minimizes J(m, x)."""
+        """Finds tier m* in Feasible(x) that minimizes J(m, x).
+
+        Raises ConstraintsUnsatisfiableError when no candidate tier satisfies all constraints.
+        """
         feasible = self.determine_feasible_set(request)
+        if not feasible:
+            from inferpath.router.strategies import ConstraintsUnsatisfiableError
+
+            unsatisfied = self.diagnose_unsatisfied_constraints(request)
+            raise ConstraintsUnsatisfiableError(
+                message=f"Constraints unsatisfiable: no candidate tier satisfies caller requirements (unsatisfied: {', '.join(unsatisfied)}).",
+                unsatisfied_constraints=unsatisfied,
+                eligible_tiers=[],
+            )
+
         best_tier = feasible[0]
         best_score = float("inf")
 

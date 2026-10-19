@@ -57,6 +57,27 @@ def test_health_check(test_client):
     assert response.json()["status"] == "healthy"
 
 
+def test_health_probes(test_client):
+    # Liveness probe
+    live_resp = test_client.get("/health/live")
+    assert live_resp.status_code == 200
+    assert live_resp.json()["status"] == "alive"
+
+    # Readiness probe
+    ready_resp = test_client.get("/health/ready")
+    assert ready_resp.status_code == 200
+    assert ready_resp.json()["status"] == "ready"
+
+    # Dependencies probe
+    dep_resp = test_client.get("/health/dependencies")
+    assert dep_resp.status_code == 200
+    dep_data = dep_resp.json()
+    assert dep_data["status"] == "healthy"
+    assert "cache_database" in dep_data["dependencies"]
+    assert dep_data["dependencies"]["cache_database"]["status"] == "ok"
+    assert dep_data["dependencies"]["cache_database"]["schema_version"] >= 1
+
+
 def test_respond_successful_deterministic(test_client):
     payload = {
         "request_id": "api_req_1",
@@ -65,6 +86,8 @@ def test_respond_successful_deterministic(test_client):
     }
     response = test_client.post("/v1/respond", json=payload)
     assert response.status_code == 200
+    assert "X-RateLimit-Limit" in response.headers
+    assert "X-RateLimit-Remaining" in response.headers
 
     data = response.json()
     assert data["request_id"] == "api_req_1"
@@ -76,6 +99,9 @@ def test_respond_successful_deterministic(test_client):
     assert data["cost_provenance"] == "calculated"
     assert data["latency_provenance"] == "measured"
     assert isinstance(data["route_trace"], list)
+    assert data["constraints_satisfied"] is True
+    assert data["unsatisfied_constraints"] == []
+    assert data["actual_calculated_cost_usd"] == 0.0
 
 
 def test_respond_template_clarification(test_client):

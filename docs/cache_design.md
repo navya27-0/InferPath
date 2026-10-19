@@ -2,25 +2,29 @@
 
 ## 1. Overview & Architectural Role
 
-The **InferPath Exact Cache Engine** sits between Stage 3 (Routing Decision) and Stage 5 (Handler / Model Execution) of the 9-stage inference routing pipeline. Its goal is to eliminate redundant compute, latency, and cost for previously validated deterministic, template, or model outputs without risking stale, invalid, or private data leakage.
+The **InferPath Exact Cache Engine** operates within the unified 11-step request lifecycle pipeline. Its goal is to eliminate redundant compute, latency, and cost for previously validated deterministic, template, or model outputs without risking stale, invalid, or private data leakage.
 
 ```
-Request ──> [Stage 1: Privacy] ──> [Stage 2: Freshness] ──> [Stage 3: Route Selection]
-                                                                     │
-               ┌─────────────────────────────────────────────────────┘
-               ▼
-[Stage 4: Cache Key Build & Lookup] ──(Hit)──> Bypass execution ──> [Stage 9: Log]
-               │ (Miss / Bypassed)
-               ▼
-[Stage 5: Execute Handler / Model]
-               │
-[Stage 6: Output Validation]
-               │
-[Stage 7: Fallback if needed]
-               │
-[Stage 8: Cache Storage (if eligible & validated)]
-               │
-[Stage 9: Telemetry & Audit Log]
+Request ──> [Step 1: Validate Schema] ──> [Step 2: Privacy Policy] ──> [Step 3: Freshness Policy]
+                                                                                │
+                   ┌────────────────────────────────────────────────────────────┘
+                   ▼
+[Step 4: Route Selection] ──> [Step 5: Cache Eligibility & Key Build]
+                                            │
+               ┌────────────────────────────┴───────────────────────────┐
+               ▼                                                        ▼
+[Step 6: Cache Lookup (Hit)] ──> Bypass Execution ──┐                   │ (Miss / Ineligible)
+                                                    │                   ▼
+                                                    │    [Step 7: Handler / Model Execution]
+                                                    │                   │
+                                                    │    [Step 8: Deterministic Validation]
+                                                    │                   │
+                                                    │    [Step 9: Bounded Fallback (C -> D)]
+                                                    │                   │
+                                                    │    [Step 10: Cache Validated Output]
+                                                    │                   │
+                                                    ▼                   ▼
+                                      [Step 11: Structured Telemetry & Audit Log]
 ```
 
 ---

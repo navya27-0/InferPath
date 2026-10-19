@@ -33,6 +33,11 @@ class BaseRateLimiter(ABC):
         """Resets all tracking histories."""
         raise NotImplementedError
 
+    @abstractmethod
+    def get_remaining(self, client_id: str) -> int:
+        """Returns the number of remaining requests allowed for client_id in the current window."""
+        raise NotImplementedError
+
 
 class RateLimiter(BaseRateLimiter):
     """
@@ -84,6 +89,15 @@ class RateLimiter(BaseRateLimiter):
         """Clears all client histories."""
         with self._lock:
             self._history.clear()
+
+    def get_remaining(self, client_id: str) -> int:
+        """Returns the number of remaining requests allowed for client_id in the current window."""
+        now = time.monotonic()
+        cutoff = now - 60.0
+        with self._lock:
+            history = self._history.get(client_id, [])
+            valid_history = [t for t in history if t > cutoff]
+            return max(0, self.requests_per_minute - len(valid_history))
 
     def get_stats(self) -> dict[str, int]:
         """Returns diagnostic metadata about active rate-limited clients."""
@@ -183,3 +197,21 @@ class DistributedRateLimiter(BaseRateLimiter):
                 self.redis_client.delete(*keys)
         except Exception:
             self._fallback_limiter.reset()
+
+    def get_remaining(self, client_id: str) -> int:
+        """Returns the number of remaining requests allowed for client_id in the current window."""
+        if self.redis_client is None:
+            return self._fallback_limiter.get_remaining(client_id)
+
+        try:
+            now = time.time()
+            cutoff = now - 60.0
+            key = f"{self.key_prefix}{client_id}"
+            pipe = self.redis_client.pipeline()
+            pipe.zremrangebyscore(key, "-inf", cutoff)
+            pipe.zcard(key)
+            results = pipe.execute()
+            count = results[1] if len(results) > 1 else (results[0] if results else 0)
+            return max(0, self.requests_per_minute - count)
+        except Exception:
+            return self._fallback_limiter.get_remaining(client_id)

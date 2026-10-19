@@ -75,11 +75,13 @@ class FallbackCoordinator:
         privacy_enforcer: PrivacyPolicyEnforcer,
         large_model_id: str,
         budget_tracker: RunBudgetTracker | None = None,
+        model_registry: Any | None = None,
     ):
         self.routing_settings = routing_settings
         self.privacy_enforcer = privacy_enforcer
         self.large_model_id = large_model_id
         self.budget_tracker = budget_tracker
+        self.model_registry = model_registry
 
     def can_attempt_fallback(
         self,
@@ -125,9 +127,22 @@ class FallbackCoordinator:
             route_trace.append({"step": "fallback_blocked", "reason": "tier_d_ineligible"})
             return False
 
+        # Dynamically lookup capabilities from model registry or configuration
+        meta = self.model_registry.get_model(self.large_model_id) if self.model_registry else None
+        max_quality_limit = getattr(
+            getattr(self.routing_settings, "fallback", None),
+            "max_quality_without_fallback",
+            None,
+        ) or (meta.quality_prior if meta else 0.96)
+        expected_latency_limit = getattr(
+            getattr(self.routing_settings, "fallback", None),
+            "large_model_expected_latency_ms",
+            None,
+        ) or (meta.p95_latency_ms if meta else 210.0)
+
         if (
             request.task_parameters.minimum_quality is not None
-            and request.task_parameters.minimum_quality > 0.96
+            and request.task_parameters.minimum_quality > max_quality_limit
         ):
             route_trace.append({"step": "fallback_blocked", "reason": "user_quality_constraint"})
             return False
@@ -148,7 +163,7 @@ class FallbackCoordinator:
 
         if (
             request.task_parameters.maximum_latency_ms is not None
-            and request.task_parameters.maximum_latency_ms < 250.0
+            and request.task_parameters.maximum_latency_ms < expected_latency_limit
         ):
             route_trace.append({"step": "fallback_blocked", "reason": "user_latency_constraint"})
             return False
@@ -248,14 +263,32 @@ class ResultFinalizer:
             model_id = (
                 output.raw_response.get("model_id") if output.raw_response else output.model_version
             )
-            env_est = self.estimator.estimate(
-                tier=output.tier,
-                model_id=model_id,
-                total_tokens=total_tokens,
-                was_cached=was_cached,
-            )
-            final_energy = env_est.energy_wh
-            final_water = env_est.total_water_ml
+            if (
+                output.tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D)
+                and not was_cached
+                and (total_input_tokens is None or total_output_tokens is None)
+            ):
+                final_energy = ProvenanceValue(
+                    value=None,
+                    provenance=ProvenanceLabel.UNAVAILABLE,
+                    unit="Wh",
+                    system_boundary=self.estimator.energy_boundary,
+                )
+                final_water = ProvenanceValue(
+                    value=None,
+                    provenance=ProvenanceLabel.UNAVAILABLE,
+                    unit="mL",
+                    system_boundary=self.estimator.total_water_boundary,
+                )
+            else:
+                env_est = self.estimator.estimate(
+                    tier=output.tier,
+                    model_id=model_id,
+                    total_tokens=total_tokens,
+                    was_cached=was_cached,
+                )
+                final_energy = env_est.energy_wh
+                final_water = env_est.total_water_ml
 
         final_tier = output.tier
         prompt_digest = hash_prompt(request.prompt)
@@ -312,4 +345,23 @@ class ResultFinalizer:
             )
             if provider_reported_cost is not None
             else None,
+            estimated_call_cost_usd=ProvenanceValue(
+                value=round(
+                    float(output.raw_response.get("estimated_call_cost_usd", total_cost_usd)), 6
+                ),
+                provenance=ProvenanceLabel.CALCULATED,
+                unit="USD",
+            )
+            if output.raw_response and "estimated_call_cost_usd" in output.raw_response
+            else None,
+            actual_calculated_cost_usd=ProvenanceValue(
+                value=round(total_cost_usd, 6),
+                provenance=ProvenanceLabel.CALCULATED,
+                unit="USD",
+            ),
+            constraints_satisfied=decision.constraints_satisfied,
+            unsatisfied_constraints=decision.unsatisfied_constraints,
+            requested_minimum_quality=request.minimum_quality,
+            requested_maximum_cost_usd=request.maximum_cost_usd,
+            requested_maximum_latency_ms=request.maximum_latency_ms,
         )
