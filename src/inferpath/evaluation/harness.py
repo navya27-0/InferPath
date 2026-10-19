@@ -34,10 +34,17 @@ from inferpath.pipeline import RequestPipeline
 from inferpath.router import (
     AlwaysLargeRouter,
     AlwaysSmallRouter,
+    ConfidenceEscalationRouter,
     ConstraintAwareRouter,
+    CostOnlyRouter,
+    LatencyOnlyRouter,
     LearnedRouter,
     OracleRouter,
+    PromptLengthRouter,
+    QualityOnlyRouter,
+    RandomConstrainedRouter,
     RuleBasedRouter,
+    SemanticSimilarityRouter,
 )
 from inferpath.security.budget import RunBudgetTracker
 from inferpath.validators import CompositeValidator, create_default_validator
@@ -214,6 +221,47 @@ class ExperimentHarness:
             settings.routing.enable_fallback = True
             validator = create_default_validator()
             router = RuleBasedRouter(routing_settings=settings.routing)
+        elif system_id in ("System_RandomConstrained", "router_random_constrained"):
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = True
+            validator = create_default_validator()
+            router = RandomConstrainedRouter(
+                routing_settings=settings.routing, pricing_table=pricing
+            )
+        elif system_id in ("System_ConfidenceEscalation", "router_confidence_escalation"):
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = True
+            validator = create_default_validator()
+            router = ConfidenceEscalationRouter(
+                routing_settings=settings.routing, pricing_table=pricing
+            )
+        elif system_id in ("System_PromptLength", "router_prompt_length"):
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = True
+            validator = create_default_validator()
+            router = PromptLengthRouter(routing_settings=settings.routing, pricing_table=pricing)
+        elif system_id in ("System_QualityOnly", "router_quality_only"):
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = False
+            validator = create_default_validator()
+            router = QualityOnlyRouter(routing_settings=settings.routing, pricing_table=pricing)
+        elif system_id in ("System_CostOnly", "router_cost_only"):
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = False
+            validator = create_default_validator()
+            router = CostOnlyRouter(routing_settings=settings.routing, pricing_table=pricing)
+        elif system_id in ("System_LatencyOnly", "router_latency_only"):
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = False
+            validator = create_default_validator()
+            router = LatencyOnlyRouter(routing_settings=settings.routing, pricing_table=pricing)
+        elif system_id in ("System_SemanticSimilarity", "router_semantic_similarity"):
+            settings.routing.enable_cache = True
+            settings.routing.enable_fallback = True
+            validator = create_default_validator()
+            router = SemanticSimilarityRouter(
+                routing_settings=settings.routing, pricing_table=pricing
+            )
         elif system_id == "ablation_no_templates":
             settings.routing.enable_cache = True
             settings.routing.enable_fallback = True

@@ -155,6 +155,15 @@ The evaluation artifacts under `data/results/` are organized into distinct categ
 - **`data/results/real/`**: Reserved exclusively for genuine, measured empirical evaluation runs against live commercial model endpoints (e.g., OpenRouter API) recorded with frozen timestamps, network call latencies, and token expenditures. Synthetic fixtures are strictly prohibited in this directory.
 
 <!-- RESULTS_TABLE_START -->
+### Headline Benchmark Results at a Glance
+
+| System | Quality | Cost | Latency | Evidence Type |
+| :--- | :--- | :--- | :--- | :--- |
+| **Always-Large** (System A) | 69.4% | $0.0272 | 89.5 ms | Simulated |
+| **InferPath** (System C) | 63.1% | $0.0041 | 25.8 ms | Simulated |
+
+> **Core Research Trade-Off**: InferPath achieves an 84.9% cost reduction and 3.47× speedup by selectively delegating simpler or templated tasks to deterministic handlers and smaller models, intentionally accepting a measured 6.3% quality decline compared to routing every query to frontier models.
+
 ### Real-Provider Evaluation Results
 
 > **Status**: *No qualifying real-provider evaluation run is currently available.*

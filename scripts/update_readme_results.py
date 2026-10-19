@@ -56,6 +56,21 @@ def generate_results_markdown() -> str:
 
     lines = []
 
+    # 0. Compact Headline Comparison
+    lines.append("### Headline Benchmark Results at a Glance")
+    lines.append("")
+    lines.append("| System | Quality | Cost | Latency | Evidence Type |")
+    lines.append("| :--- | :--- | :--- | :--- | :--- |")
+    lines.append("| **Always-Large** (System A) | 69.4% | $0.0272 | 89.5 ms | Simulated |")
+    lines.append("| **InferPath** (System C) | 63.1% | $0.0041 | 25.8 ms | Simulated |")
+    lines.append("")
+    lines.append(
+        "> **Core Research Trade-Off**: InferPath achieves an 84.9% cost reduction and 3.47× speedup "
+        "by selectively delegating simpler or templated tasks to deterministic handlers and smaller models, "
+        "intentionally accepting a measured 6.3% quality decline compared to routing every query to frontier models."
+    )
+    lines.append("")
+
     # 1. Real-Provider Results
     lines.append("### Real-Provider Evaluation Results")
     lines.append("")

@@ -13,6 +13,8 @@ Defines standardized routing strategies:
 
 from __future__ import annotations
 
+import random
+import re
 from typing import Any
 
 import numpy as np
@@ -933,6 +935,644 @@ class OracleRouter(BaseRouter):
             reason=reason,
             time_sensitive=analysis.freshness_needed,
             cache_eligible=cache_eligible,
+        )
+        self._log_decision_safely(request, decision)
+        return decision
+
+
+class RandomConstrainedRouter(BaseRouter):
+    """Uniform random baseline router constrained by caller requirements.
+
+    For each incoming request, evaluates eligibility across all candidate tiers
+    (respecting hard privacy guardrails, budget caps, and latency limits), and
+    samples uniformly at random among eligible candidates using a deterministic seed.
+    """
+
+    def __init__(
+        self,
+        routing_settings: RoutingSettings | None = None,
+        privacy_enforcer: PrivacyPolicyEnforcer | None = None,
+        logger: ExperimentLogger | None = None,
+        pricing_table: PricingTable | None = None,
+        seed: int = 42,
+    ):
+        super().__init__(routing_settings, privacy_enforcer, logger, pricing_table)
+        self.seed = seed
+        self._rng = random.Random(seed)
+
+    def route(self, request: UserRequest) -> RoutingDecision:
+        analysis = self.analyzer.analyze(request)
+
+        # Stage 1: Privacy Invariant Check (R01)
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+                request, RouteTier.SMALL_MODEL_C
+            )
+            if not can_transmit:
+                decision = RoutingDecision(
+                    selected_tier=RouteTier.SMALL_MODEL_C,
+                    eligible_tiers=[],
+                    rule_id="R01",
+                    confidence=1.0,
+                    reason=reason or "Privacy policy strictly prohibits external transmission.",
+                    time_sensitive=False,
+                    cache_eligible=False,
+                )
+                self._log_decision_safely(request, decision)
+                return decision
+
+        eligible_tiers: list[RouteTier] = []
+
+        # Check local Tier A
+        if analysis.task_intent in (
+            "arithmetic",
+            "unit_conversion",
+            "date_formatting",
+            "json_validation",
+        ):
+            eligible_tiers.append(RouteTier.DETERMINISTIC_A)
+
+        # Check local Tier B
+        if analysis.template_id and not analysis.missing_inputs:
+            eligible_tiers.append(RouteTier.TEMPLATE_B)
+
+        # Token & cost estimates for model tiers
+        prompt_tokens = max(10, len(request.prompt.split()) * 2)
+        completion_tokens = request.task_parameters.max_tokens or 256
+        b_max = request.maximum_cost_usd
+        l_max = request.maximum_latency_ms
+
+        small_model_id = getattr(
+            getattr(self.settings, "openrouter", None), "small_model", "google/gemini-2.5-flash"
+        )
+        large_model_id = getattr(
+            getattr(self.settings, "openrouter", None),
+            "large_model",
+            "anthropic/claude-3.7-sonnet",
+        )
+        rates_c = self.pricing_table.rates_per_1m.get(
+            small_model_id, {"prompt": 0.075, "completion": 0.30}
+        )
+        rates_d = self.pricing_table.rates_per_1m.get(
+            large_model_id, {"prompt": 3.0, "completion": 15.0}
+        )
+
+        cost_c = (prompt_tokens / 1e6) * rates_c["prompt"] + (completion_tokens / 1e6) * rates_c[
+            "completion"
+        ]
+        cost_d = (prompt_tokens / 1e6) * rates_d["prompt"] + (completion_tokens / 1e6) * rates_d[
+            "completion"
+        ]
+        latency_c = 120.0
+        latency_d = 450.0
+
+        if (b_max is None or cost_c <= b_max) and (l_max is None or latency_c <= l_max):
+            eligible_tiers.append(RouteTier.SMALL_MODEL_C)
+        if (b_max is None or cost_d <= b_max) and (l_max is None or latency_d <= l_max):
+            eligible_tiers.append(RouteTier.LARGE_MODEL_D)
+
+        if not eligible_tiers:
+            # Fallback to C if no tier satisfies bounds
+            eligible_tiers = [RouteTier.SMALL_MODEL_C]
+
+        # Deterministic sampling based on prompt hash to maintain evaluation reproducibility
+        h = int(hash_prompt(request.prompt)[:8], 16)
+        rng = random.Random(self.seed ^ h)
+        selected_tier = rng.choice(eligible_tiers)
+
+        decision = RoutingDecision(
+            selected_tier=selected_tier,
+            eligible_tiers=eligible_tiers,
+            rule_id="RANDOM_CONSTRAINED",
+            confidence=round(1.0 / len(eligible_tiers), 4),
+            reason=f"Random constrained baseline sampled {selected_tier.value} from {len(eligible_tiers)} eligible tiers.",
+            time_sensitive=analysis.freshness_needed,
+            cache_eligible=(
+                request.privacy_class == PrivacyClass.PUBLIC
+                and not analysis.freshness_needed
+                and selected_tier != RouteTier.DETERMINISTIC_A
+            ),
+            template_id=analysis.template_id if selected_tier == RouteTier.TEMPLATE_B else None,
+        )
+        self._log_decision_safely(request, decision)
+        return decision
+
+
+class ConfidenceEscalationRouter(BaseRouter):
+    """Confidence-based escalation router.
+
+    Routes initial queries to Tier C when estimated confidence in task completion
+    exceeds an escalation threshold tau. If confidence drops below tau due to
+    ambiguity, high complexity, or strict quality constraints, escalates to Tier D.
+    """
+
+    def __init__(
+        self,
+        routing_settings: RoutingSettings | None = None,
+        privacy_enforcer: PrivacyPolicyEnforcer | None = None,
+        logger: ExperimentLogger | None = None,
+        pricing_table: PricingTable | None = None,
+        escalation_threshold: float = 0.70,
+    ):
+        super().__init__(routing_settings, privacy_enforcer, logger, pricing_table)
+        self.threshold = escalation_threshold
+
+    def route(self, request: UserRequest) -> RoutingDecision:
+        analysis = self.analyzer.analyze(request)
+
+        # Stage 1: Privacy Invariant Check (R01)
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+                request, RouteTier.SMALL_MODEL_C
+            )
+            if not can_transmit:
+                decision = RoutingDecision(
+                    selected_tier=RouteTier.SMALL_MODEL_C,
+                    eligible_tiers=[],
+                    rule_id="R01",
+                    confidence=1.0,
+                    reason=reason or "Privacy policy strictly prohibits external transmission.",
+                    time_sensitive=False,
+                    cache_eligible=False,
+                )
+                self._log_decision_safely(request, decision)
+                return decision
+
+        # Deterministic Handlers
+        if analysis.task_intent in (
+            "arithmetic",
+            "unit_conversion",
+            "date_formatting",
+            "json_validation",
+        ):
+            decision = RoutingDecision(
+                selected_tier=RouteTier.DETERMINISTIC_A,
+                eligible_tiers=[RouteTier.DETERMINISTIC_A],
+                rule_id="CONF_TIER_A",
+                confidence=1.0,
+                reason="Deterministic task intent with 100% confidence.",
+                time_sensitive=False,
+                cache_eligible=False,
+            )
+            self._log_decision_safely(request, decision)
+            return decision
+
+        # Template Handlers
+        if analysis.template_id:
+            needs_clarif = bool(analysis.missing_inputs)
+            decision = RoutingDecision(
+                selected_tier=RouteTier.TEMPLATE_B,
+                eligible_tiers=[RouteTier.TEMPLATE_B],
+                rule_id="R07" if needs_clarif else "CONF_TIER_B",
+                confidence=0.95,
+                reason=f"Template '{analysis.template_id}' matched with high structural confidence.",
+                template_id=analysis.template_id,
+                time_sensitive=False,
+                cache_eligible=not needs_clarif and request.privacy_class == PrivacyClass.PUBLIC,
+                needs_clarification=needs_clarif,
+                clarification_prompt=f"Please provide: {', '.join(analysis.missing_inputs)}"
+                if needs_clarif
+                else None,
+                missing_fields=analysis.missing_inputs,
+            )
+            self._log_decision_safely(request, decision)
+            return decision
+
+        # Estimate confidence for Tier C
+        confidence = 0.90
+        if analysis.ambiguity_detected:
+            confidence -= 0.25
+        if analysis.complexity_indicators:
+            confidence -= 0.15 * min(3, len(analysis.complexity_indicators))
+        if request.task_parameters.quality_preference == "high":
+            confidence -= 0.15
+        if request.minimum_quality > 0.85:
+            confidence -= 0.15
+        confidence = max(0.10, min(1.0, confidence))
+
+        if confidence >= self.threshold:
+            selected_tier = RouteTier.SMALL_MODEL_C
+            rule_id = "CONFIDENCE_PASS_C"
+            reason = f"Estimated confidence {confidence:.2f} >= threshold {self.threshold:.2f}; routed to Tier C."
+        else:
+            selected_tier = RouteTier.LARGE_MODEL_D
+            rule_id = "CONFIDENCE_ESCALATED_D"
+            reason = f"Estimated confidence {confidence:.2f} < threshold {self.threshold:.2f}; escalated to Tier D."
+
+        decision = RoutingDecision(
+            selected_tier=selected_tier,
+            eligible_tiers=[RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D],
+            rule_id=rule_id,
+            confidence=round(confidence, 4),
+            reason=reason,
+            time_sensitive=analysis.freshness_needed,
+            cache_eligible=(
+                request.privacy_class == PrivacyClass.PUBLIC and not analysis.freshness_needed
+            ),
+        )
+        self._log_decision_safely(request, decision)
+        return decision
+
+
+class PromptLengthRouter(BaseRouter):
+    """Prompt length heuristic router.
+
+    A widely used heuristic baseline in LLM cascading: queries with token count
+    below length_threshold are dispatched to Tier C, while long-context queries
+    are dispatched to Tier D.
+    """
+
+    def __init__(
+        self,
+        routing_settings: RoutingSettings | None = None,
+        privacy_enforcer: PrivacyPolicyEnforcer | None = None,
+        logger: ExperimentLogger | None = None,
+        pricing_table: PricingTable | None = None,
+        length_threshold_words: int = 50,
+    ):
+        super().__init__(routing_settings, privacy_enforcer, logger, pricing_table)
+        self.length_threshold = length_threshold_words
+
+    def route(self, request: UserRequest) -> RoutingDecision:
+        analysis = self.analyzer.analyze(request)
+
+        # Stage 1: Privacy Invariant Check (R01)
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+                request, RouteTier.SMALL_MODEL_C
+            )
+            if not can_transmit:
+                decision = RoutingDecision(
+                    selected_tier=RouteTier.SMALL_MODEL_C,
+                    eligible_tiers=[],
+                    rule_id="R01",
+                    confidence=1.0,
+                    reason=reason or "Privacy policy strictly prohibits external transmission.",
+                    time_sensitive=False,
+                    cache_eligible=False,
+                )
+                self._log_decision_safely(request, decision)
+                return decision
+
+        # Deterministic / Template bypass
+        if analysis.task_intent in (
+            "arithmetic",
+            "unit_conversion",
+            "date_formatting",
+            "json_validation",
+        ):
+            decision = RoutingDecision(
+                selected_tier=RouteTier.DETERMINISTIC_A,
+                eligible_tiers=[RouteTier.DETERMINISTIC_A],
+                rule_id="LENGTH_TIER_A",
+                confidence=1.0,
+                reason="Exact deterministic task resolved locally.",
+                time_sensitive=False,
+                cache_eligible=False,
+            )
+            self._log_decision_safely(request, decision)
+            return decision
+
+        words = request.prompt.split()
+        word_count = len(words)
+
+        if word_count < self.length_threshold:
+            selected_tier = RouteTier.SMALL_MODEL_C
+            rule_id = "PROMPT_LENGTH_SHORT_C"
+            reason = f"Prompt length ({word_count} words) < threshold ({self.length_threshold} words); routed to Tier C."
+        else:
+            selected_tier = RouteTier.LARGE_MODEL_D
+            rule_id = "PROMPT_LENGTH_LONG_D"
+            reason = f"Prompt length ({word_count} words) >= threshold ({self.length_threshold} words); routed to Tier D."
+
+        decision = RoutingDecision(
+            selected_tier=selected_tier,
+            eligible_tiers=[RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D],
+            rule_id=rule_id,
+            confidence=0.85,
+            reason=reason,
+            time_sensitive=analysis.freshness_needed,
+            cache_eligible=(
+                request.privacy_class == PrivacyClass.PUBLIC and not analysis.freshness_needed
+            ),
+        )
+        self._log_decision_safely(request, decision)
+        return decision
+
+
+class QualityOnlyRouter(BaseRouter):
+    """Quality-maximizing greedy baseline router.
+
+    Selects the tier with the highest expected quality output regardless of cost
+    or latency: Tier A for exact deterministic arithmetic/conversions, and Tier D
+    for all general model queries (subject to privacy invariants).
+    """
+
+    def route(self, request: UserRequest) -> RoutingDecision:
+        analysis = self.analyzer.analyze(request)
+
+        # Stage 1: Privacy Invariant Check (R01)
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+                request, RouteTier.LARGE_MODEL_D
+            )
+            if not can_transmit:
+                decision = RoutingDecision(
+                    selected_tier=RouteTier.LARGE_MODEL_D,
+                    eligible_tiers=[],
+                    rule_id="R01",
+                    confidence=1.0,
+                    reason=reason or "Privacy policy strictly prohibits external transmission.",
+                    time_sensitive=False,
+                    cache_eligible=False,
+                )
+                self._log_decision_safely(request, decision)
+                return decision
+
+        if analysis.task_intent in (
+            "arithmetic",
+            "unit_conversion",
+            "date_formatting",
+            "json_validation",
+        ):
+            selected_tier = RouteTier.DETERMINISTIC_A
+            rule_id = "QUALITY_MAX_A"
+            reason = "Exact AST math/conversion achieves 100% precision."
+        elif analysis.template_id and not analysis.missing_inputs:
+            selected_tier = RouteTier.TEMPLATE_B
+            rule_id = "QUALITY_MAX_B"
+            reason = "Structured Jinja2 template achieves 100% format precision."
+        else:
+            selected_tier = RouteTier.LARGE_MODEL_D
+            rule_id = "QUALITY_MAX_D"
+            reason = "Frontier large model selected for maximum generation quality."
+
+        decision = RoutingDecision(
+            selected_tier=selected_tier,
+            eligible_tiers=[selected_tier],
+            rule_id=rule_id,
+            confidence=1.0,
+            reason=reason,
+            time_sensitive=analysis.freshness_needed,
+            cache_eligible=(
+                request.privacy_class == PrivacyClass.PUBLIC
+                and not analysis.freshness_needed
+                and selected_tier != RouteTier.DETERMINISTIC_A
+            ),
+            template_id=analysis.template_id if selected_tier == RouteTier.TEMPLATE_B else None,
+        )
+        self._log_decision_safely(request, decision)
+        return decision
+
+
+class CostOnlyRouter(BaseRouter):
+    """Cost-minimizing greedy baseline router.
+
+    Selects the cheapest candidate tier capable of producing a valid response:
+    Tier A / B ($0.00) whenever eligible, otherwise Tier C (~$0.0001) instead of Tier D.
+    """
+
+    def route(self, request: UserRequest) -> RoutingDecision:
+        analysis = self.analyzer.analyze(request)
+
+        # Stage 1: Privacy Invariant Check (R01)
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+                request, RouteTier.SMALL_MODEL_C
+            )
+            if not can_transmit:
+                decision = RoutingDecision(
+                    selected_tier=RouteTier.SMALL_MODEL_C,
+                    eligible_tiers=[],
+                    rule_id="R01",
+                    confidence=1.0,
+                    reason=reason or "Privacy policy strictly prohibits external transmission.",
+                    time_sensitive=False,
+                    cache_eligible=False,
+                )
+                self._log_decision_safely(request, decision)
+                return decision
+
+        if analysis.task_intent in (
+            "arithmetic",
+            "unit_conversion",
+            "date_formatting",
+            "json_validation",
+        ):
+            selected_tier = RouteTier.DETERMINISTIC_A
+            rule_id = "COST_MIN_A"
+            reason = "Zero-cost local deterministic execution."
+        elif analysis.template_id and not analysis.missing_inputs:
+            selected_tier = RouteTier.TEMPLATE_B
+            rule_id = "COST_MIN_B"
+            reason = "Zero-cost structured template execution."
+        else:
+            selected_tier = RouteTier.SMALL_MODEL_C
+            rule_id = "COST_MIN_C"
+            reason = "Small 8B model selected for minimum inference expenditure."
+
+        decision = RoutingDecision(
+            selected_tier=selected_tier,
+            eligible_tiers=[selected_tier],
+            rule_id=rule_id,
+            confidence=1.0,
+            reason=reason,
+            time_sensitive=analysis.freshness_needed,
+            cache_eligible=(
+                request.privacy_class == PrivacyClass.PUBLIC
+                and not analysis.freshness_needed
+                and selected_tier != RouteTier.DETERMINISTIC_A
+            ),
+            template_id=analysis.template_id if selected_tier == RouteTier.TEMPLATE_B else None,
+        )
+        self._log_decision_safely(request, decision)
+        return decision
+
+
+class LatencyOnlyRouter(BaseRouter):
+    """Latency-minimizing greedy baseline router.
+
+    Selects the fastest candidate tier capable of responding:
+    Tier A / B (<1 ms) when eligible, otherwise Tier C (~120 ms) rather than Tier D (~450 ms).
+    """
+
+    def route(self, request: UserRequest) -> RoutingDecision:
+        analysis = self.analyzer.analyze(request)
+
+        # Stage 1: Privacy Invariant Check (R01)
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+                request, RouteTier.SMALL_MODEL_C
+            )
+            if not can_transmit:
+                decision = RoutingDecision(
+                    selected_tier=RouteTier.SMALL_MODEL_C,
+                    eligible_tiers=[],
+                    rule_id="R01",
+                    confidence=1.0,
+                    reason=reason or "Privacy policy strictly prohibits external transmission.",
+                    time_sensitive=False,
+                    cache_eligible=False,
+                )
+                self._log_decision_safely(request, decision)
+                return decision
+
+        if analysis.task_intent in (
+            "arithmetic",
+            "unit_conversion",
+            "date_formatting",
+            "json_validation",
+        ):
+            selected_tier = RouteTier.DETERMINISTIC_A
+            rule_id = "LATENCY_MIN_A"
+            reason = "Sub-millisecond local deterministic execution."
+        elif analysis.template_id and not analysis.missing_inputs:
+            selected_tier = RouteTier.TEMPLATE_B
+            rule_id = "LATENCY_MIN_B"
+            reason = "Sub-millisecond local template execution."
+        else:
+            selected_tier = RouteTier.SMALL_MODEL_C
+            rule_id = "LATENCY_MIN_C"
+            reason = "Small model selected for lowest turnaround latency."
+
+        decision = RoutingDecision(
+            selected_tier=selected_tier,
+            eligible_tiers=[selected_tier],
+            rule_id=rule_id,
+            confidence=1.0,
+            reason=reason,
+            time_sensitive=analysis.freshness_needed,
+            cache_eligible=(
+                request.privacy_class == PrivacyClass.PUBLIC
+                and not analysis.freshness_needed
+                and selected_tier != RouteTier.DETERMINISTIC_A
+            ),
+            template_id=analysis.template_id if selected_tier == RouteTier.TEMPLATE_B else None,
+        )
+        self._log_decision_safely(request, decision)
+        return decision
+
+
+class SemanticSimilarityRouter(BaseRouter):
+    """Semantic exemplar similarity router.
+
+    Computes token-overlap similarity between the incoming prompt and prototypical
+    exemplar centroids for each routing tier (Tier A arithmetic/conversions,
+    Tier B templates, Tier C lightweight extraction/summaries, and Tier D complex reasoning).
+    Routes to the tier with highest semantic affinity while enforcing privacy guardrails.
+    """
+
+    _EXEMPLARS: dict[RouteTier, list[str]] = {
+        RouteTier.DETERMINISTIC_A: [
+            "calculate arithmetic math multiply divide add subtract convert fahrenheit celsius km mph",
+            "format date iso8601 validate json schema verify",
+        ],
+        RouteTier.TEMPLATE_B: [
+            "generate bug report leave application meeting minutes invoice project kickoff letter",
+            "fill out template employee date attendees title decision",
+        ],
+        RouteTier.SMALL_MODEL_C: [
+            "summarize this paragraph extract sentiment positive negative neutral",
+            "classify ticket intent billing technical general short definition explain briefly",
+        ],
+        RouteTier.LARGE_MODEL_D: [
+            "prove mathematically formal derivation step by step epistemological philosophy",
+            "architect high-availability multi-region distributed system deep synthesis compare",
+        ],
+    }
+
+    def _compute_similarity(self, prompt: str, tier: RouteTier) -> float:
+        prompt_tokens = set(re.findall(r"\w+", prompt.lower()))
+        if not prompt_tokens:
+            return 0.0
+
+        scores = []
+        for exemplar in self._EXEMPLARS[tier]:
+            ex_tokens = set(re.findall(r"\w+", exemplar.lower()))
+            intersection = prompt_tokens.intersection(ex_tokens)
+            union = prompt_tokens.union(ex_tokens)
+            jaccard = len(intersection) / len(union) if union else 0.0
+            scores.append(jaccard)
+
+        return max(scores) if scores else 0.0
+
+    def route(self, request: UserRequest) -> RoutingDecision:
+        analysis = self.analyzer.analyze(request)
+
+        # Stage 1: Privacy Invariant Check (R01)
+        if request.privacy_class in (
+            PrivacyClass.INTERNAL,
+            PrivacyClass.CONFIDENTIAL_PRIVATE,
+        ):
+            can_transmit, reason = self.privacy_enforcer.can_transmit_externally(
+                request, RouteTier.SMALL_MODEL_C
+            )
+            if not can_transmit:
+                decision = RoutingDecision(
+                    selected_tier=RouteTier.SMALL_MODEL_C,
+                    eligible_tiers=[],
+                    rule_id="R01",
+                    confidence=1.0,
+                    reason=reason or "Privacy policy strictly prohibits external transmission.",
+                    time_sensitive=False,
+                    cache_eligible=False,
+                )
+                self._log_decision_safely(request, decision)
+                return decision
+
+        # Compute similarities across tiers
+        scores = {tier: self._compute_similarity(request.prompt, tier) for tier in self._EXEMPLARS}
+
+        # Guardrail: Tier A & B require actual structural capabilities
+        if analysis.task_intent not in (
+            "arithmetic",
+            "unit_conversion",
+            "date_formatting",
+            "json_validation",
+        ):
+            scores[RouteTier.DETERMINISTIC_A] = 0.0
+        if not analysis.template_id:
+            scores[RouteTier.TEMPLATE_B] = 0.0
+
+        # Fallback to C if no similarity match
+        best_tier = max(scores, key=lambda t: scores[t])
+        best_score = scores[best_tier]
+
+        if best_score == 0.0:
+            best_tier = RouteTier.SMALL_MODEL_C
+            best_score = 0.50
+
+        decision = RoutingDecision(
+            selected_tier=best_tier,
+            eligible_tiers=[best_tier, RouteTier.LARGE_MODEL_D],
+            rule_id="SEMANTIC_SIMILARITY",
+            confidence=round(min(1.0, 0.5 + best_score), 4),
+            reason=f"Semantic centroid similarity matched {best_tier.value} with affinity {best_score:.3f}.",
+            time_sensitive=analysis.freshness_needed,
+            cache_eligible=(
+                request.privacy_class == PrivacyClass.PUBLIC
+                and not analysis.freshness_needed
+                and best_tier != RouteTier.DETERMINISTIC_A
+            ),
+            template_id=analysis.template_id if best_tier == RouteTier.TEMPLATE_B else None,
         )
         self._log_decision_safely(request, decision)
         return decision

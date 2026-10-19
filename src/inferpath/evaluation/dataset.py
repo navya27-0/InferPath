@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from inferpath.models.enums import PrivacyClass
 
 CategoryType = Literal[
+    # Core 8 Pilot Categories
     "arithmetic_and_unit_conversion",
     "templated_documents",
     "rewriting",
@@ -19,6 +20,17 @@ CategoryType = Literal[
     "classification",
     "multi_step_reasoning",
     "synthesis",
+    # 10 Realistic Workload Classes
+    "long_context",
+    "code_generation",
+    "debugging",
+    "multi_turn",
+    "tool_calling",
+    "multilingual",
+    "domain_specific_private",
+    "prompt_injection",
+    "freshness_sensitive",
+    "distribution_shifted",
 ]
 
 TierType = Literal["easy", "moderate", "difficult"]
@@ -157,6 +169,28 @@ def load_pilot_dataset(dataset_path: Path | str | None = None) -> PilotDataset:
     path = Path(dataset_path)
     if not path.exists():
         raise FileNotFoundError(f"Pilot dataset not found at {path}")
+
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    return PilotDataset(**data)
+
+
+def load_comprehensive_dataset(dataset_path: Path | str | None = None) -> PilotDataset:
+    """Loads extended comprehensive workload dataset containing all 18 categories."""
+    if dataset_path is None:
+        cand = Path.cwd() / "data" / "comprehensive_workload_dataset.json"
+        if not cand.exists():
+            cand = (
+                Path(__file__).resolve().parent.parent.parent.parent
+                / "data"
+                / "comprehensive_workload_dataset.json"
+            )
+        dataset_path = cand
+
+    path = Path(dataset_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Comprehensive workload dataset not found at {path}")
 
     with open(path, encoding="utf-8") as f:
         data = json.load(f)

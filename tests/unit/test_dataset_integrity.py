@@ -90,3 +90,25 @@ def test_deterministic_sha256_reproducibility():
 
     assert digest1 == digest2
     assert len(digest1) == 64
+
+
+def test_comprehensive_workload_dataset():
+    """Validates the comprehensive workload dataset containing all 18 classes."""
+    from inferpath.evaluation.dataset import load_comprehensive_dataset
+
+    comp_dataset = load_comprehensive_dataset()
+    assert comp_dataset.total_count == 340
+    is_valid, errors = comp_dataset.validate_split_integrity()
+    assert is_valid is True, f"Validation errors: {errors}"
+
+    categories = {item.task_category for item in comp_dataset.items}
+    assert "long_context" in categories
+    assert "code_generation" in categories
+    assert "debugging" in categories
+    assert "multi_turn" in categories
+    assert "tool_calling" in categories
+    assert "multilingual" in categories
+    assert "domain_specific_private" in categories
+    assert "prompt_injection" in categories
+    assert "freshness_sensitive" in categories
+    assert "distribution_shifted" in categories
