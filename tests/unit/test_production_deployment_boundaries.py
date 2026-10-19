@@ -403,7 +403,7 @@ def test_pipeline_and_api_adapter_factory_injection():
     health = client.get("/v1/health")
     assert health.status_code == 200
     assert health.json()["version"] == __version__
-    assert health.json()["version"] == "0.2.0"
+    assert health.json()["version"] == "0.3.0"
 
 
 def test_redis_rate_limiter_health_reporting_and_degradation(monkeypatch):

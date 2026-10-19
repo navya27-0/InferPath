@@ -25,7 +25,12 @@ def main() -> int:
             "redis_cost_per_query_usd": estimator.REDIS_COST_PER_QUERY_USD,
         },
         "prompt_length_sweep": sweep,
-        "key_takeaway": "On ultra-short queries (<25 tokens), router execution, validation, and logging account for ~4.5% of total query expenditure. As prompt length expands beyond 150 tokens, routing operational overhead collapses to under 0.8% of total cost, making routing overwhelmingly cost-positive.",
+        "key_takeaway": (
+            "On ultra-short queries (10-50 tokens), router execution, validation, and logging account for "
+            "6.4% to 10.1% of total query expenditure. As prompt length expands to 150 tokens, overhead drops to 2.3%, "
+            "and for prompts exceeding 500 tokens, routing operational overhead collapses to under 0.8% (and <0.3% at 2000+ tokens), "
+            "making routing overwhelmingly cost-positive."
+        ),
     }
 
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)

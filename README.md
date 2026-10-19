@@ -157,12 +157,15 @@ The evaluation artifacts under `data/results/` are organized into distinct categ
 <!-- RESULTS_TABLE_START -->
 ### Headline Benchmark Results (Phase 5 Primary Frozen Protocol)
 
+> [!IMPORTANT]
+> **Methodological Scope & Evidence Notice**: All primary results below are derived from an **offline simulated benchmark** using deterministic mock adapters on frozen benchmark splits (`dev` split, 160 items). Costs are **calculated** from token counts and published pricing models, environmental metrics are **estimated** from datacenter PUE/WUE formulas, and **no qualifying real-provider evaluation is currently included**. The reported 84.9% cost reduction represents a **calculated savings in simulation**, not real-world measured financial savings.
+
 | System | Quality Pass Rate | Cost (USD) | Latency | Evidence Type |
 | :--- | :--- | :--- | :--- | :--- |
 | **Always-Large** (System A) | 69.4% `[SIMULATED]` | $0.0272 `[CALCULATED]` | 89.5 ms `[SIMULATED]` | Deterministic Simulation |
 | **InferPath** (System C) | 63.1% `[SIMULATED]` | $0.0041 `[CALCULATED]` | 25.8 ms `[SIMULATED]` | Deterministic Simulation |
 
-> **Core Research Trade-Off**: InferPath achieves an **84.9% calculated cost reduction** and **3.47× speedup** by selectively delegating simpler or templated tasks to deterministic handlers and smaller models, intentionally accepting a measured **6.3% quality decline** compared to routing every query to frontier models.
+> **Core Research Trade-Off**: InferPath achieves an **84.9% calculated cost reduction** and **3.47× speedup** in simulation by selectively delegating simpler or templated tasks to deterministic handlers and smaller models, intentionally accepting a measured **6.3% quality decline** compared to routing every query to frontier models.
 
 #### Feature Capability & Validation Status Taxonomy
 

@@ -59,6 +59,14 @@ def generate_results_markdown() -> str:
     # 0. Compact Headline Comparison with Standardized Evidence Badges
     lines.append("### Headline Benchmark Results (Phase 5 Primary Frozen Protocol)")
     lines.append("")
+    lines.append(
+        "> [!IMPORTANT]\n"
+        "> **Methodological Scope & Evidence Notice**: All primary results below are derived from an **offline simulated benchmark** "
+        "using deterministic mock adapters on frozen benchmark splits (`dev` split, 160 items). Costs are **calculated** from token counts and "
+        "published pricing models, environmental metrics are **estimated** from datacenter PUE/WUE formulas, and **no qualifying real-provider evaluation is currently included**. "
+        "The reported 84.9% cost reduction represents a **calculated savings in simulation**, not real-world measured financial savings."
+    )
+    lines.append("")
     lines.append("| System | Quality Pass Rate | Cost (USD) | Latency | Evidence Type |")
     lines.append("| :--- | :--- | :--- | :--- | :--- |")
     lines.append(
@@ -69,7 +77,7 @@ def generate_results_markdown() -> str:
     )
     lines.append("")
     lines.append(
-        "> **Core Research Trade-Off**: InferPath achieves an **84.9% calculated cost reduction** and **3.47× speedup** "
+        "> **Core Research Trade-Off**: InferPath achieves an **84.9% calculated cost reduction** and **3.47× speedup** in simulation "
         "by selectively delegating simpler or templated tasks to deterministic handlers and smaller models, "
         "intentionally accepting a measured **6.3% quality decline** compared to routing every query to frontier models."
     )

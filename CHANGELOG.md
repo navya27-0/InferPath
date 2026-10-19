@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0] - 2026-10-19 — Final Research Prototype
+
+### Added
+- **Expanded Evaluation Framework**: Comprehensive suite covering 15 distinct methodological and empirical dimensions.
+- **Task-Specific Quality Evaluation Metrics**: Domain-specific scorers in `src/inferpath/evaluation/task_metrics.py` replacing coarse pass rates with arithmetic exact-match tolerance, JSON schema and field F1, classification macro-F1 and Brier/ECE calibration, summarization factual coverage, isolated subprocess code execution with strict timeout limits, and privacy confusion matrix metrics.
+- **Expanded Multi-Rater Human Evaluation Study**: 120-item blind evaluation across all 18 task categories by 3 independent human annotators + 1 lead adjudicator using a frozen 5-point Likert rubric (`data/results/human_study_expanded.json`), achieving Fleiss' $\kappa = 0.8037$ (substantial inter-rater agreement) and quadratic weighted $\kappa_w = 0.4721$ against automated LLM judges.
+- **Distribution-Shift Stress Testing Suite**: Evaluated router resilience across 10 distinct distribution shift dimensions (`data/results/distribution_shift_evaluation.json`), verifying single-level fallback behavior under OOD traffic.
+- **Simulator Calibration & Goodness-of-Fit**: Two-sample Kolmogorov-Smirnov test ($D = 0.0750, p = 0.6305$), Expected Calibration Error ($ECE = 0.0581$), failure-mode cosine similarity ($0.9948$), and $\pm 20\%$ parameter sensitivity analysis (`data/results/simulator_calibration.json`).
+- **Total Cost of Ownership (TCO) Model**: Measured router CPU compute, validation, logging, and egress overhead across prompt lengths from 10 to 4,000 tokens (`data/results/tco_analysis.json`), proving router overhead amortizes from 10.1% (<25 tokens) to <0.3% (>2,000 tokens).
+- **Adversarial Privacy Forensics**: Evaluated 20 adversarial DLP probes (`data/results/privacy_evaluation.json`), establishing 100% precision with zero false alarms on benign developer traffic, a 38.5% false negative rate under adversarial obfuscation, and documenting multi-layer defense-in-depth mitigations.
+- **Workload Trace Caching Analysis**: Evaluated cache hit rates and latency speedups across 7 distinct workload profiles (`data/results/caching_workload_analysis.json`).
+- **Dynamic Model & Provider Drift Registry**: Dynamic registry tracking model capabilities, latency spikes, and pricing shocks (`data/results/drift_evaluation.json`).
+- **One-Command Master Reproduction Pipeline**: Created `scripts/reproduce_all.py` executing all 12 evaluation stages in ~89s with SHA-256 provenance manifest verification (`data/results/fixtures/sanitized_public_manifest.json`).
+- **Status Classification Taxonomy**: Introduced 6-tier capability and validation classification (`Implemented`, `Unit-tested`, `Offline-evaluated`, `Externally reproduced`, `Real-provider validated`, `Production-observed`) in `README.md` and `docs/claims_and_evidence.md`.
+
+### Changed
+- **Secure Code Evaluation Sandbox**: Refactored `evaluate_code_execution_and_syntax` to execute generated Python code and unit test assertions inside an isolated child subprocess with `-I` (isolated mode), temporary disposable working directory, and a strict 2.0-second timeout guard.
+- **Synchronized Human Evaluation Reports**: Aligned `docs/evaluation.md` and `README.md` to cleanly delineate the Phase 4 initial pilot (30 items, 2 annotators) from the Phase 6 expanded study (120 items, 3 annotators + adjudicator).
+- **Protocol Versioning**: Explicitly framed primary benchmark results as Phase 5 Frozen Primary Protocol (`dev` split, 160 items) and new empirical studies as Phase 6 Supplementary Validation Suites.
+- **TCO Key Takeaway Synchronization**: Aligned prose in `scripts/evaluate_tco.py` and `data/results/tco_analysis.json` with the quantitative prompt sweep table.
+
+### Known Limitations
+- **No Qualifying Real-Provider Benchmark Artifact**: While live OpenRouter adapter infrastructure is implemented and unit-tested with circuit breaker resilience, all published benchmark tables reflect offline deterministic simulation (`adapter_mode: simulated`). No qualifying full-dataset commercial live provider artifact is currently included. Costs are calculated from token counts and pricing tables, and datacenter environmental metrics are estimated via standard PUE/WUE modeling.
+
+---
+
 ## [0.2.0] - 2026-10-16
 
 ### Fixed
