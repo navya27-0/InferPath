@@ -64,18 +64,34 @@ def test_summarization_quality():
 
 
 def test_code_execution_and_syntax():
-    # Valid syntax & passing assertions
+    # Valid syntax & passing assertions in isolated subprocess
     code = "def add(a, b):\n    return a + b\n"
     res1 = evaluate_code_execution_and_syntax(code, ["add(2, 3) == 5", "add(-1, 1) == 0"])
     assert res1["passed"] is True
     assert res1["syntax_valid"] is True
     assert res1["tests_passed"] == 2
+    assert res1["execution_mode"] == "isolated_subprocess"
 
     # Syntax error
     bad_code = "def invalid syntax here :"
     res2 = evaluate_code_execution_and_syntax(bad_code)
     assert res2["passed"] is False
     assert res2["syntax_valid"] is False
+    assert res2["execution_mode"] == "syntax_only"
+
+    # Runtime error in code under test
+    error_code = "def boom():\n    raise ValueError('runtime crash')\nboom()"
+    res3 = evaluate_code_execution_and_syntax(error_code, ["True"])
+    assert res3["passed"] is False
+    assert res3["syntax_valid"] is True
+    assert "SubprocessExecutionError" in res3["error"]
+
+    # Timeout guard on runaway infinite loop
+    loop_code = "while True:\n    pass"
+    res4 = evaluate_code_execution_and_syntax(loop_code, ["True"], timeout_seconds=0.5)
+    assert res4["passed"] is False
+    assert res4["syntax_valid"] is True
+    assert "TimeoutExpired" in res4["error"]
 
 
 def test_privacy_evaluation():

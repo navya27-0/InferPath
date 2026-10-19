@@ -14,7 +14,12 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from typing import Any
 
 
@@ -244,9 +249,22 @@ def evaluate_summarization_quality(
 
 
 def evaluate_code_execution_and_syntax(
-    code_str: str, unit_test_assertions: list[str] | None = None
+    code_str: str,
+    unit_test_assertions: list[str] | None = None,
+    timeout_seconds: float = 2.0,
 ) -> dict[str, Any]:
-    """Validates Python syntax through AST parsing and optionally executes unit test assertions."""
+    """Validates Python syntax through AST parsing and executes unit test assertions in an isolated subprocess.
+
+    Security & Isolation Boundaries:
+    1. Static AST parsing is executed first in-process to reject syntax violations safely.
+    2. Test assertions are executed in a dedicated, isolated child Python subprocess with `-I`
+       (isolated mode; ignores user-site packages and environment variables).
+    3. The process runs inside a disposable temporary directory with a clean environment.
+    4. Execution is guarded by a strict timeout (default 2.0s), preventing runaway loops or DoS.
+    5. Note: While subprocess isolation protects the host Python process from in-process introspection
+       or state pollution, multi-tenant production execution of untrusted arbitrary code should
+       leverage microVMs (e.g., Firecracker) or secure sandboxes (e.g., gVisor/nsjail).
+    """
     # Clean markdown fences if present
     clean_code = code_str.strip()
     code_match = re.search(r"```(?:python)?\s*(.*?)\s*```", clean_code, re.DOTALL)
@@ -263,52 +281,101 @@ def evaluate_code_execution_and_syntax(
             "tests_passed": 0,
             "total_tests": len(unit_test_assertions or []),
             "error": f"SyntaxError: {e}",
+            "execution_mode": "syntax_only",
         }
 
     tests_passed = 0
     total_tests = len(unit_test_assertions or [])
     if unit_test_assertions:
-        # Create safe sandbox environment
-        restricted_globals = {
-            "__builtins__": {
-                "range": range,
-                "len": len,
-                "int": int,
-                "float": float,
-                "str": str,
-                "list": list,
-                "dict": dict,
-                "set": set,
-                "tuple": tuple,
-                "bool": bool,
-                "min": min,
-                "max": max,
-                "sum": sum,
-                "abs": abs,
-                "round": round,
-                "sorted": sorted,
-                "enumerate": enumerate,
-                "zip": zip,
-                "print": lambda *args: None,
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner_script = Path(tmpdir) / "runner.py"
+            result_file = Path(tmpdir) / "results.json"
+
+            # Create test harness script
+            harness_code = (
+                "import json\n"
+                "import sys\n\n"
+                "# Generated Candidate Code\n"
+                f"{clean_code}\n\n"
+                "# Test Harness\n"
+                f"assertions = {json.dumps(unit_test_assertions)}\n"
+                "passed = 0\n"
+                "errors = []\n"
+                "for assertion in assertions:\n"
+                "    try:\n"
+                "        if eval(assertion):\n"
+                "            passed += 1\n"
+                "        else:\n"
+                '            errors.append(f"Assertion failed: {assertion}")\n'
+                "    except Exception as exc:\n"
+                "        errors.append(f\"Error evaluating '{assertion}': {exc}\")\n\n"
+                f"with open(r'{result_file}', 'w', encoding='utf-8') as f:\n"
+                "    json.dump({'tests_passed': passed, 'errors': errors}, f)\n"
+            )
+            runner_script.write_text(harness_code, encoding="utf-8")
+
+            clean_env = {
+                "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+                "PATH": os.environ.get("PATH", ""),
+                "PYTHONPATH": "",
+                "PYTHONDONTWRITEBYTECODE": "1",
             }
-        }
-        local_scope: dict[str, Any] = {}
-        try:
-            exec(clean_code, restricted_globals, local_scope)
-            for assertion in unit_test_assertions:
-                try:
-                    eval(assertion, restricted_globals, local_scope)
-                    tests_passed += 1
-                except Exception:
-                    pass
-        except Exception as e:
-            return {
-                "passed": False,
-                "syntax_valid": True,
-                "tests_passed": tests_passed,
-                "total_tests": total_tests,
-                "error": f"ExecutionError: {e}",
-            }
+
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-I", str(runner_script)],
+                    cwd=tmpdir,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_seconds,
+                    env=clean_env,
+                )
+                if proc.returncode != 0:
+                    err_msg = (
+                        proc.stderr.strip()
+                        or proc.stdout.strip()
+                        or f"Process exited with {proc.returncode}"
+                    )
+                    return {
+                        "passed": False,
+                        "syntax_valid": True,
+                        "tests_passed": 0,
+                        "total_tests": total_tests,
+                        "error": f"SubprocessExecutionError: {err_msg}",
+                        "execution_mode": "isolated_subprocess",
+                    }
+
+                if result_file.exists():
+                    with open(result_file, encoding="utf-8") as rf:
+                        data = json.load(rf)
+                    tests_passed = data.get("tests_passed", 0)
+                else:
+                    return {
+                        "passed": False,
+                        "syntax_valid": True,
+                        "tests_passed": 0,
+                        "total_tests": total_tests,
+                        "error": "ExecutionError: Missing results file from runner",
+                        "execution_mode": "isolated_subprocess",
+                    }
+            except subprocess.TimeoutExpired:
+                return {
+                    "passed": False,
+                    "syntax_valid": True,
+                    "tests_passed": 0,
+                    "total_tests": total_tests,
+                    "error": f"TimeoutExpired: Execution exceeded {timeout_seconds}s limit",
+                    "execution_mode": "isolated_subprocess",
+                }
+            except Exception as e:
+                return {
+                    "passed": False,
+                    "syntax_valid": True,
+                    "tests_passed": 0,
+                    "total_tests": total_tests,
+                    "error": f"ExecutionError: {e}",
+                    "execution_mode": "isolated_subprocess",
+                }
 
     all_passed = syntax_valid and (tests_passed == total_tests if total_tests > 0 else True)
     return {
@@ -316,6 +383,7 @@ def evaluate_code_execution_and_syntax(
         "syntax_valid": syntax_valid,
         "tests_passed": tests_passed,
         "total_tests": total_tests,
+        "execution_mode": "isolated_subprocess" if unit_test_assertions else "syntax_only",
     }
 
 

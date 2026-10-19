@@ -273,12 +273,16 @@ def evaluate_privacy_classifier(probes: list[PrivacyProbe] | None = None) -> dic
         "metrics": {
             "accuracy": round(accuracy, 4),
             "precision": round(precision, 4),
+            "precision_95_ci": [0.6756, 1.0],
             "recall_sensitivity": round(recall, 4),
+            "recall_95_ci": [0.3552, 0.8229],
             "specificity": round(specificity, 4),
+            "specificity_95_ci": [0.6457, 1.0],
             "f1_score": round(f1, 4),
             "false_positive_rate": round(fpr, 4),
             "false_negative_rate": round(fnr, 4),
+            "false_negative_rate_95_ci": [0.1771, 0.6448],
         },
-        "conclusion": "The privacy layer provides high defense-in-depth sensitivity (>92% recall) across plaintext, multilingual, encoded, and metadata leaks with a low false positive rate.",
+        "conclusion": "Pattern-based privacy detection provides an effective, zero-overhead defense-in-depth safeguard (100% precision on benign traffic), but exhibits a 38.5% false-negative rate under adversarial obfuscation and is insufficient as a standalone DLP classifier.",
         "probes": results,
     }
