@@ -18,6 +18,12 @@ class ReservationState(StrEnum):
     EXCEEDED = "EXCEEDED"
 
 
+class UnknownModelPricingError(ValueError):
+    """Raised when a model is not configured in the active pricing table."""
+
+    pass
+
+
 class BudgetExceededError(ValueError):
     """Raised when an estimated model invocation exceeds the remaining per-run budget cap."""
 
@@ -117,11 +123,17 @@ class RunBudgetTracker:
         self, model_id: str, prompt: str, max_tokens: int | None = None
     ) -> float:
         """Estimates maximum plausible cost using configured price table and prompt length."""
+        if self.pricing_table is not None and model_id not in self.pricing_table.rates_per_1m:
+            table_date = getattr(self.pricing_table, "effective_date", "unconfigured")
+            raise UnknownModelPricingError(
+                f"Cannot estimate call cost: model '{model_id}' is unpriced in active pricing table ({table_date})."
+            )
+
         if not self.pricing_table:
-            # Safe default fallback rate if price table not loaded
+            # Safe default fallback rate if price table not loaded in isolated unit tests
             return 0.005
 
-        rates = self.pricing_table.rates_per_1m.get(model_id, {"prompt": 3.0, "completion": 15.0})
+        rates = self.pricing_table.rates_per_1m[model_id]
         prompt_rate = rates.get("prompt", 0.0)
         completion_rate = rates.get("completion", 0.0)
 

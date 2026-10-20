@@ -717,14 +717,28 @@ class RequestPipeline:
         else:
             raise PipelineExecutionError(f"Unsupported execution tier: {tier}")
 
+        # Enforce verified redaction on non-public requests permitted under override
+        outbound_prompt = request.prompt
+        if request.privacy_class != PrivacyClass.PUBLIC or contains_sensitive_patterns(
+            request.prompt
+        ):
+            redacted_req = self.privacy_enforcer.redact_request_for_transmission(request)
+            if not self.privacy_enforcer.verify_redacted(redacted_req.prompt):
+                raise PrivacyViolationError(
+                    "Outbound request failed post-redaction verification: residual sensitive content detected.",
+                    privacy_class=request.privacy_class.value,
+                    target_tier=tier.value,
+                )
+            outbound_prompt = redacted_req.prompt
+
         if not isinstance(adapter, OpenRouterAdapter) and self.budget_tracker:
             est_cost = self.budget_tracker.estimate_call_cost(
-                adapter.model_id, request.prompt, request.task_parameters.max_tokens
+                adapter.model_id, outbound_prompt, request.task_parameters.max_tokens
             )
             res_tok = self.budget_tracker.reserve(est_cost)
             try:
                 model_res = adapter.generate(
-                    request.prompt, max_tokens=request.task_parameters.max_tokens
+                    outbound_prompt, max_tokens=request.task_parameters.max_tokens
                 )
             except Exception:
                 self.budget_tracker.release(res_tok)
@@ -732,7 +746,7 @@ class RequestPipeline:
             self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
         else:
             model_res = adapter.generate(
-                request.prompt, max_tokens=request.task_parameters.max_tokens
+                outbound_prompt, max_tokens=request.task_parameters.max_tokens
             )
         return self._model_result_to_handler_output(model_res, tier)
 
@@ -752,14 +766,28 @@ class RequestPipeline:
         else:
             raise PipelineExecutionError(f"Unsupported execution tier: {tier}")
 
+        # Enforce verified redaction on non-public requests permitted under override
+        outbound_prompt = request.prompt
+        if request.privacy_class != PrivacyClass.PUBLIC or contains_sensitive_patterns(
+            request.prompt
+        ):
+            redacted_req = self.privacy_enforcer.redact_request_for_transmission(request)
+            if not self.privacy_enforcer.verify_redacted(redacted_req.prompt):
+                raise PrivacyViolationError(
+                    "Outbound request failed post-redaction verification: residual sensitive content detected.",
+                    privacy_class=request.privacy_class.value,
+                    target_tier=tier.value,
+                )
+            outbound_prompt = redacted_req.prompt
+
         if not isinstance(adapter, OpenRouterAdapter) and self.budget_tracker:
             est_cost = self.budget_tracker.estimate_call_cost(
-                adapter.model_id, request.prompt, request.task_parameters.max_tokens
+                adapter.model_id, outbound_prompt, request.task_parameters.max_tokens
             )
             res_tok = self.budget_tracker.reserve(est_cost)
             try:
                 model_res = await adapter.generate_async(
-                    request.prompt, max_tokens=request.task_parameters.max_tokens
+                    outbound_prompt, max_tokens=request.task_parameters.max_tokens
                 )
             except Exception:
                 self.budget_tracker.release(res_tok)
@@ -767,7 +795,7 @@ class RequestPipeline:
             self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
         else:
             model_res = await adapter.generate_async(
-                request.prompt, max_tokens=request.task_parameters.max_tokens
+                outbound_prompt, max_tokens=request.task_parameters.max_tokens
             )
         return self._model_result_to_handler_output(model_res, tier)
 

@@ -4,15 +4,15 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: inferpath-api
-    # Localhost binding by default (127.0.0.1) prevents unauthenticated network exposure in local-demo mode.
-    # Set INFERPATH_HOST_BIND=0.0.0.0 only when INFERPATH_DEPLOYMENT_MODE=protected with a strong INFERPATH_API_KEY.
+    # Localhost binding by default (127.0.0.1) prevents unauthenticated network exposure.
+    # Set INFERPATH_HOST_BIND=0.0.0.0 only with an authenticated deployment profile (production/staging) and a configured INFERPATH_API_KEY.
     ports:
       - "${INFERPATH_HOST_BIND:-127.0.0.1}:8000:8000"
     environment:
       - ADAPTER_MODE=${ADAPTER_MODE:-simulated}
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - INFERPATH_ENVIRONMENT=${INFERPATH_ENVIRONMENT:-production}
-      - INFERPATH_DEPLOYMENT_MODE=${INFERPATH_DEPLOYMENT_MODE:-local-demo}
+      - INFERPATH_DEPLOYMENT_MODE=${INFERPATH_DEPLOYMENT_MODE:-production}
       - INFERPATH_VERSION=${INFERPATH_VERSION:-0.3.0}
       - INFERPATH_API_KEY=${INFERPATH_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
@@ -39,6 +39,7 @@ services:
       - ADAPTER_MODE=${ADAPTER_MODE:-simulated}
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - INFERPATH_ENVIRONMENT=${INFERPATH_ENVIRONMENT:-production}
+      - INFERPATH_DEPLOYMENT_MODE=${INFERPATH_DEPLOYMENT_MODE:-production}
     command: ["streamlit", "run", "app/dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
     depends_on:
       api:

@@ -1,15 +1,14 @@
-"""Explicit production deployment profiles for InferPath service operations."""
+"""Deployment profiles configuring security boundaries, rates, and operational defaults."""
 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from enum import StrEnum
-
-from pydantic import BaseModel, Field
 
 
 class ProfileName(StrEnum):
-    """Supported standardized deployment profiles."""
+    """Canonical supported deployment profile identifiers."""
 
     LOCAL_DEMO = "local-demo"
     STAGING = "staging"
@@ -17,33 +16,28 @@ class ProfileName(StrEnum):
     BENCHMARK_OFFLINE = "benchmark-offline"
 
 
-class DeploymentProfileConfig(BaseModel):
-    """Configuration constraints and defaults defined for a deployment profile."""
+@dataclass(frozen=True)
+class DeploymentProfileConfig:
+    """Security, concurrency, and telemetry defaults for a deployment tier."""
 
     name: ProfileName
-    require_api_key: bool = Field(
-        description="Enforces mandatory X-API-Key / Bearer authentication"
-    )
-    adapter_mode: str = Field(default="simulated", description="'simulated' or 'real'")
-    rate_limit_rpm: int = Field(
-        default=120, description="Sliding window requests per minute per client"
-    )
-    log_level: str = Field(default="INFO")
-    structured_json_logging: bool = Field(default=True)
-    enable_tracing: bool = Field(default=True)
-    default_bind_host: str = Field(default="127.0.0.1")
-    allow_mock_fallback: bool = Field(default=True)
-    trusted_proxies: set[str] = Field(default_factory=set)
+    require_api_key: bool
+    rate_limit_rpm: int
+    adapter_mode: str
+    log_level: str
+    structured_json_logging: bool
+    enable_tracing: bool
+    default_bind_host: str
+    allow_mock_fallback: bool
 
 
-# Predefined canonical profiles
 PROFILES: dict[ProfileName, DeploymentProfileConfig] = {
     ProfileName.LOCAL_DEMO: DeploymentProfileConfig(
         name=ProfileName.LOCAL_DEMO,
         require_api_key=False,
+        rate_limit_rpm=60,
         adapter_mode="simulated",
-        rate_limit_rpm=120,
-        log_level="DEBUG",
+        log_level="INFO",
         structured_json_logging=False,
         enable_tracing=True,
         default_bind_host="127.0.0.1",
@@ -52,20 +46,20 @@ PROFILES: dict[ProfileName, DeploymentProfileConfig] = {
     ProfileName.STAGING: DeploymentProfileConfig(
         name=ProfileName.STAGING,
         require_api_key=True,
-        adapter_mode="simulated",
-        rate_limit_rpm=300,
+        rate_limit_rpm=120,
+        adapter_mode="real",
         log_level="INFO",
         structured_json_logging=True,
         enable_tracing=True,
-        default_bind_host="127.0.0.1",
+        default_bind_host="0.0.0.0",
         allow_mock_fallback=True,
     ),
     ProfileName.PRODUCTION: DeploymentProfileConfig(
         name=ProfileName.PRODUCTION,
         require_api_key=True,
+        rate_limit_rpm=240,
         adapter_mode="real",
-        rate_limit_rpm=600,
-        log_level="INFO",
+        log_level="WARNING",
         structured_json_logging=True,
         enable_tracing=True,
         default_bind_host="0.0.0.0",
@@ -74,9 +68,9 @@ PROFILES: dict[ProfileName, DeploymentProfileConfig] = {
     ProfileName.BENCHMARK_OFFLINE: DeploymentProfileConfig(
         name=ProfileName.BENCHMARK_OFFLINE,
         require_api_key=False,
-        adapter_mode="simulated",
         rate_limit_rpm=10_000,
-        log_level="WARNING",
+        adapter_mode="simulated",
+        log_level="ERROR",
         structured_json_logging=False,
         enable_tracing=False,
         default_bind_host="127.0.0.1",
@@ -97,6 +91,8 @@ def get_deployment_profile(profile_str: str | None = None) -> DeploymentProfileC
     5. Environment detection: if INFERPATH_ENV or ENVIRONMENT is 'production'/'prod', defaults to production
     6. Default: local-demo
     """
+    env_signal = (os.getenv("INFERPATH_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower()
+
     raw = (
         profile_str
         or os.getenv("INFERPATH_DEPLOYMENT_PROFILE")
@@ -104,7 +100,6 @@ def get_deployment_profile(profile_str: str | None = None) -> DeploymentProfileC
         or os.getenv("INFERPATH_DEPLOYMENT_MODE")
     )
     if not raw:
-        env_signal = (os.getenv("INFERPATH_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower()
         raw = "production" if env_signal in ("production", "prod") else "local-demo"
 
     cleaned = raw.strip().lower()
@@ -135,4 +130,13 @@ def get_deployment_profile(profile_str: str | None = None) -> DeploymentProfileC
         )
 
     selected_enum = alias_map[cleaned]
+
+    # Reject unauthenticated profile when environment signal is production
+    if env_signal in ("production", "prod") and selected_enum == ProfileName.LOCAL_DEMO:
+        raise ValueError(
+            f"Conflicting deployment configuration: ENVIRONMENT='{env_signal}' cannot be combined "
+            f"with unauthenticated '{raw}' profile. Set ENVIRONMENT=development for local testing "
+            "or select a protected/production profile."
+        )
+
     return PROFILES[selected_enum]

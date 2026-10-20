@@ -28,7 +28,12 @@ from inferpath.security.budget import BudgetExceededError
 from inferpath.security.hashing import scrub_api_keys
 from inferpath.security.privacy import PrivacyViolationError
 from inferpath.security.secret_manager import GLOBAL_SECRET_MANAGER
-from inferpath.services.rate_limiter import BaseRateLimiter, DistributedRateLimiter, RateLimiter
+from inferpath.services.rate_limiter import (
+    BaseRateLimiter,
+    DistributedRateLimiter,
+    RateLimiter,
+    RateLimiterBackendError,
+)
 from inferpath.telemetry.metrics import GLOBAL_METRICS
 from inferpath.telemetry.structured_logging import configure_structured_logging, current_request_id
 from inferpath.telemetry.tracing import GLOBAL_TRACER
@@ -168,6 +173,15 @@ def create_app(
         )
     else:
         redis_url = os.getenv("INFERPATH_REDIS_URL") or os.getenv("REDIS_URL")
+        fail_closed_env = os.getenv("INFERPATH_RATE_LIMIT_FAIL_CLOSED")
+        if fail_closed_env is not None:
+            rate_limit_fail_closed = fail_closed_env.strip().lower() in ("true", "1", "yes")
+        else:
+            rate_limit_fail_closed = active_profile.name in (
+                ProfileName.PRODUCTION,
+                ProfileName.STAGING,
+            )
+
         require_redis = os.getenv("INFERPATH_REQUIRE_REDIS", "").lower() in (
             "true",
             "1",
@@ -184,10 +198,11 @@ def create_app(
                 limiter = DistributedRateLimiter(
                     redis_client=redis_client,
                     requests_per_minute=active_profile.rate_limit_rpm,
+                    fail_closed=rate_limit_fail_closed,
                 )
                 rate_limiter_status = "distributed"
             except Exception as e:
-                if require_redis:
+                if require_redis or rate_limit_fail_closed:
                     raise RuntimeError(
                         f"Failed to initialize distributed rate limiter with redis_url={redis_url}: {e}"
                     ) from e
@@ -200,6 +215,10 @@ def create_app(
                 limiter = RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
                 rate_limiter_status = "in_memory (degraded_fallback)"
         else:
+            if require_redis:
+                raise RuntimeError(
+                    "Deployment profile requires Redis for distributed rate limiting (INFERPATH_REQUIRE_REDIS=true), but no Redis URL configured."
+                )
             limiter = RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
             rate_limiter_status = "in_memory"
 
@@ -222,6 +241,26 @@ def create_app(
             "Deployment profile 'production' requires an explicit application API key, "
             "but INFERPATH_API_KEY is not configured. Startup halted to prevent unauthenticated exposure."
         )
+
+    # Reject non-localhost bindings when unauthenticated
+    host_bind = (
+        os.getenv("INFERPATH_HOST_BIND") or os.getenv("INFERPATH_BIND_HOST") or os.getenv("HOST")
+    )
+    if host_bind:
+        clean_bind = host_bind.strip().lower()
+        is_loopback = clean_bind in ("127.0.0.1", "localhost", "::1") or clean_bind.startswith(
+            "127."
+        )
+        if not is_loopback and (
+            not active_profile.require_api_key
+            or not required_api_key
+            or not required_api_key.strip()
+        ):
+            raise RuntimeError(
+                f"Security violation: Binding to public interface '{host_bind}' is strictly prohibited "
+                f"under unauthenticated deployment profile '{active_profile.name.value}'. "
+                "Public network interfaces require an authenticated deployment profile (production/staging) and an explicit INFERPATH_API_KEY."
+            )
 
     # Configure structured logging if enabled in profile
     if active_profile.structured_json_logging:
@@ -357,13 +396,16 @@ def create_app(
     @app.get("/health")
     @app.get("/v1/health")
     async def health_check():
+        is_degraded = getattr(limiter, "is_degraded", False)
+        status_str = "degraded" if is_degraded else "healthy"
         return {
-            "status": "healthy",
+            "status": status_str,
             "service": "inferpath",
             "version": __version__,
             "deployment_mode": dep_mode,
             "profile": active_profile.name.value,
             "rate_limiter": app.state.rate_limiter_status,
+            "rate_limiter_degraded": is_degraded,
         }
 
     @app.get("/health/live")
@@ -410,6 +452,9 @@ def create_app(
                 "rate_limiter": {
                     "backend": app.state.rate_limiter_status,
                     "rpm": limiter.requests_per_minute,
+                    "degraded": getattr(limiter, "is_degraded", False),
+                    "failures": getattr(limiter, "failure_count", 0),
+                    "fail_closed": getattr(limiter, "fail_closed", False),
                 },
                 "pipeline": {
                     "adapter_mode": active_profile.adapter_mode,
@@ -462,7 +507,22 @@ def create_app(
         else:
             client_ip = peer_ip
 
-        if not limiter.is_allowed(client_ip):
+        try:
+            allowed = limiter.is_allowed(client_ip)
+        except RateLimiterBackendError as err:
+            GLOBAL_METRICS.record_rate_limit_backend_error()
+            headers = {"Retry-After": "60"}
+            raise HTTPException(
+                status_code=429,
+                headers=headers,
+                detail={
+                    "error": "Rate limit backend failure (fail-closed)",
+                    "detail": scrub_api_keys(str(err)),
+                    "code": "RATE_LIMIT_BACKEND_UNAVAILABLE",
+                },
+            ) from err
+
+        if not allowed:
             headers = {
                 "X-RateLimit-Limit": str(limiter.requests_per_minute),
                 "X-RateLimit-Remaining": "0",

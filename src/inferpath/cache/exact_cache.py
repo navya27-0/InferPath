@@ -139,11 +139,111 @@ class ExactCache:
 
     def migrate_if_needed(self) -> int:
         """Applies schema migrations for legacy databases without schema_version."""
-        ver = self.get_schema_version()
-        if ver < CURRENT_SCHEMA_VERSION:
-            self.init_schema()
-            return CURRENT_SCHEMA_VERSION
-        return ver
+        with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout = 5000;")
+            cursor = conn.cursor()
+
+            # 1. Inspect exact_cache columns if table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='exact_cache';"
+            )
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(exact_cache);")
+                columns = {row[1] for row in cursor.fetchall()}
+                if "hit_count" not in columns:
+                    conn.execute("ALTER TABLE exact_cache ADD COLUMN hit_count INTEGER DEFAULT 0;")
+                if "validation_status" not in columns:
+                    conn.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN validation_status TEXT DEFAULT 'valid';"
+                    )
+                if "requirements_snapshot" not in columns:
+                    conn.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN requirements_snapshot TEXT DEFAULT '{}';"
+                    )
+                if "input_tokens" not in columns:
+                    conn.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN input_tokens INTEGER DEFAULT 0;"
+                    )
+                if "output_tokens" not in columns:
+                    conn.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN output_tokens INTEGER DEFAULT 0;"
+                    )
+                if "latency_ms" not in columns:
+                    conn.execute("ALTER TABLE exact_cache ADD COLUMN latency_ms REAL DEFAULT 0.0;")
+
+            # 2. Ensure schema_version table exists and record current version
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO schema_version (version) VALUES (?);",
+                (CURRENT_SCHEMA_VERSION,),
+            )
+            conn.commit()
+
+        self.init_schema()
+        return CURRENT_SCHEMA_VERSION
+
+    async def migrate_if_needed_async(self) -> int:
+        """Asynchronously applies schema migrations for legacy databases."""
+        async with aiosqlite.connect(self.db_path, timeout=10.0) as db:
+            await db.execute("PRAGMA journal_mode=WAL;")
+            await db.execute("PRAGMA busy_timeout = 5000;")
+            cursor = await db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='exact_cache';"
+            )
+            row = await cursor.fetchone()
+            if row:
+                info_cur = await db.execute("PRAGMA table_info(exact_cache);")
+                rows = await info_cur.fetchall()
+                columns = {r[1] for r in rows}
+                if "hit_count" not in columns:
+                    await db.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN hit_count INTEGER DEFAULT 0;"
+                    )
+                if "validation_status" not in columns:
+                    await db.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN validation_status TEXT DEFAULT 'valid';"
+                    )
+                if "requirements_snapshot" not in columns:
+                    await db.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN requirements_snapshot TEXT DEFAULT '{}';"
+                    )
+                if "input_tokens" not in columns:
+                    await db.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN input_tokens INTEGER DEFAULT 0;"
+                    )
+                if "output_tokens" not in columns:
+                    await db.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN output_tokens INTEGER DEFAULT 0;"
+                    )
+                if "latency_ms" not in columns:
+                    await db.execute(
+                        "ALTER TABLE exact_cache ADD COLUMN latency_ms REAL DEFAULT 0.0;"
+                    )
+
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            await db.execute(
+                "INSERT OR IGNORE INTO schema_version (version) VALUES (?);",
+                (CURRENT_SCHEMA_VERSION,),
+            )
+            await db.commit()
+
+        await self.init_schema_async()
+        return CURRENT_SCHEMA_VERSION
 
     def lookup(self, cache_key: str) -> HandlerOutput | None:
         """

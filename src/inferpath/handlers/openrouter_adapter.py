@@ -10,7 +10,7 @@ import httpx
 from inferpath.config.settings import PricingTable
 from inferpath.models.domain import ModelResult
 from inferpath.models.enums import ProvenanceLabel
-from inferpath.security.budget import RunBudgetTracker
+from inferpath.security.budget import RunBudgetTracker, UnknownModelPricingError
 from inferpath.security.hashing import scrub_api_keys
 
 
@@ -52,12 +52,6 @@ class OpenRouterResponseError(OpenRouterError):
 
 class CircuitBreakerOpenError(OpenRouterError):
     """Raised when request is rejected immediately because circuit breaker is OPEN."""
-
-    pass
-
-
-class UnknownModelPricingError(OpenRouterError):
-    """Raised when a model ID is not configured in the active pricing table."""
 
     pass
 
@@ -244,8 +238,18 @@ class OpenRouterAdapter:
             usage_available=usage_available,
         )
 
+    def validate_model_pricing(self) -> None:
+        """Validates that model is registered in the active pricing table prior to dispatch."""
+        if not self.pricing_table or self.model_id not in self.pricing_table.rates_per_1m:
+            table_date = getattr(self.pricing_table, "effective_date", "unconfigured")
+            raise UnknownModelPricingError(
+                f"Model '{self.model_id}' is unpriced in active pricing table ({table_date}). "
+                "Pre-dispatch validation halted execution to prevent unpriced provider spend."
+            )
+
     def generate(self, prompt: str, **params: Any) -> ModelResult:
         """Synchronous model completion with retries, timeout, and budget tracking."""
+        self.validate_model_pricing()
         if not self.circuit_breaker.can_execute():
             raise CircuitBreakerOpenError(
                 f"Circuit breaker is OPEN for model '{self.model_id}'. Dispatch halted to prevent cascading failure."
@@ -339,6 +343,7 @@ class OpenRouterAdapter:
 
     async def generate_async(self, prompt: str, **params: Any) -> ModelResult:
         """Asynchronous model completion with bounded retries and budget reservation."""
+        self.validate_model_pricing()
         if not self.circuit_breaker.can_execute():
             raise CircuitBreakerOpenError(
                 f"Circuit breaker is OPEN for model '{self.model_id}'. Dispatch halted to prevent cascading failure."

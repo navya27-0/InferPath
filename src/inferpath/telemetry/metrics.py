@@ -73,6 +73,11 @@ class MetricsCollector:
             key = ("BLOCKED", "budget_exceeded")
             self.requests_total[key] = self.requests_total.get(key, 0) + 1
 
+    def record_rate_limit_backend_error(self) -> None:
+        with self._lock:
+            key = ("BLOCKED", "rate_limit_backend_error")
+            self.requests_total[key] = self.requests_total.get(key, 0) + 1
+
     def export_prometheus(self) -> str:
         """Renders metrics in Prometheus standard text exposition format (version 0.0.4)."""
         lines: list[str] = []

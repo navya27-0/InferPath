@@ -69,11 +69,14 @@ InferPath supports standardized deployment profiles configured via `INFERPATH_DE
 | `benchmark-offline` (alias `evaluation`) | Hermetic reproduction | Disabled | `simulated` (Mock) | `127.0.0.1` | 10,000 RPM |
 
 Key Environment Variables:
-- `INFERPATH_DEPLOYMENT_PROFILE`: Canonical profile identifier.
-- `INFERPATH_API_KEY`: Application authentication secret.
-- `OPENROUTER_API_KEY`: Upstream LLM provider credentials.
+- `INFERPATH_DEPLOYMENT_PROFILE`: Canonical profile identifier (`local-demo`, `staging`, `production`, `benchmark-offline`).
+- `INFERPATH_API_KEY`: Application authentication secret. Required for production/staging or when exposed beyond localhost.
+- `OPENROUTER_API_KEY`: Upstream LLM provider credentials. Validated pre-dispatch against the active pricing schedule.
+- `INFERPATH_HOST_BIND`: Network interface binding (`127.0.0.1` default; `0.0.0.0` strictly requires authenticated profile and API key).
 - `INFERPATH_REDIS_URL`: Redis connection URL for distributed rate limiting.
-- `INFERPATH_ENV` / `ENVIRONMENT`: Environment indicator (auto-promotes to production if set to production).
+- `INFERPATH_REQUIRE_REDIS`: Explicitly enforces Redis availability on startup (`true`/`false`).
+- `INFERPATH_RATE_LIMIT_FAIL_CLOSED`: Controls whether distributed rate limiting fails closed on Redis outage (defaults to `true` in production/staging).
+- `INFERPATH_ENV` / `ENVIRONMENT`: Environment indicator (auto-promotes to production if set to production; rejects unauthenticated local-demo).
 
 To run with distributed rate limiting across horizontal workers, specify:
 ```bash

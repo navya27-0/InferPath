@@ -1,5 +1,8 @@
 """Privacy policy enforcement and privacy-preserving audit sanitization."""
 
+from __future__ import annotations
+
+import re
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +71,93 @@ class PrivacyPolicyEnforcer:
                 "allow_redacted_transmission_override": False,
             }
 
+    def redact_text(self, text: str | None) -> str:
+        """Redacts sensitive credentials, PII patterns, and confidential markers from text."""
+        if not text:
+            return ""
+
+        redacted = text
+        # 1. API Keys, Tokens & Hashes
+        redacted = re.sub(r"sk-[a-zA-Z0-9_\-]{16,}", "[REDACTED_API_KEY]", redacted)
+        redacted = re.sub(
+            r"(?i)\b(bearer\s+)[a-zA-Z0-9_\-\.]{16,}", r"\1[REDACTED_TOKEN]", redacted
+        )
+        redacted = re.sub(
+            r"(?i)\b(api[_\-]?key[=:\s]+)[a-zA-Z0-9_\-]{8,}", r"\1[REDACTED_KEY]", redacted
+        )
+        redacted = re.sub(
+            r"\b(ghp_[a-zA-Z0-9]{20,}|xox[baprs]-[a-zA-Z0-9_\-]+)\b",
+            "[REDACTED_TOKEN]",
+            redacted,
+        )
+
+        # 2. SSN & National IDs
+        redacted = re.sub(r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]", redacted)
+        redacted = re.sub(
+            r"(?i)\b(ssn|social\s+security\s+number)[=:\s]+\d{3}[-\s]?\d{2}[-\s]?\d{4}\b",
+            r"\1=[REDACTED_SSN]",
+            redacted,
+        )
+
+        # 3. Credit Card / CVV
+        redacted = re.sub(r"\b(?:\d{4}[-\s]?){3}\d{4}\b", "[REDACTED_CREDIT_CARD]", redacted)
+        redacted = re.sub(r"(?i)\b(cvv|cvc)[=:\s]+\d{3,4}\b", r"\1=[REDACTED_CVV]", redacted)
+
+        # 4. Email addresses
+        redacted = re.sub(
+            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+            "[REDACTED_EMAIL]",
+            redacted,
+        )
+
+        # 5. Passwords / Secrets / Credentials
+        redacted = re.sub(
+            r"(?i)\b(pass(?:word|wd)|pwd)[=:\s]+[^\s,;]+", r"\1=[REDACTED_PASSWORD]", redacted
+        )
+        redacted = re.sub(
+            r"(?i)\b(trade[_\s]?secret|confidential[_\s]?secret|client[_\s]?secret|secret[_\s]?key|private[_\s]?key)[=:\s]+[^\s,;]+",
+            r"\1=[REDACTED_SECRET]",
+            redacted,
+        )
+
+        # 6. Obfuscated sensitive patterns (de-spaced letters, e.g. 's e c r e t', 'p 4 s s w 0 r d')
+        redacted = re.sub(
+            r"(?i)\b(?:s\s*e\s*c\s*r\s*e\s*t|p\s*4\s*s\s*s\s*w\s*0\s*r\s*d)\b",
+            "[REDACTED_SECRET]",
+            redacted,
+        )
+        redacted = re.sub(r"(?i)\b(?:trade[_\s]?secret)\b", "[REDACTED_CONFIDENTIAL]", redacted)
+
+        # 7. Apply analyzer SENSITIVE_CONTENT_PATTERNS defensively
+        from inferpath.router.analyzer import SENSITIVE_CONTENT_PATTERNS
+
+        for pattern in SENSITIVE_CONTENT_PATTERNS:
+            redacted = pattern.sub("[REDACTED_SENSITIVE]", redacted)
+
+        return redacted
+
+    def redact_request_for_transmission(self, request: UserRequest) -> UserRequest:
+        """Constructs a verified redacted copy of UserRequest for external transmission."""
+        redacted_prompt = self.redact_text(request.prompt)
+        redacted_context = self.redact_text(request.context) if request.context else None
+        redacted_metadata: dict[str, Any] = {}
+        for k, v in request.metadata.items():
+            redacted_metadata[k] = self.redact_text(str(v))
+
+        return request.model_copy(
+            update={
+                "prompt": redacted_prompt,
+                "context": redacted_context,
+                "metadata": redacted_metadata,
+            }
+        )
+
+    def verify_redacted(self, text: str) -> bool:
+        """Verifies that redacted text contains no residual sensitive patterns."""
+        from inferpath.router.analyzer import contains_sensitive_patterns
+
+        return not contains_sensitive_patterns(text)
+
     def evaluate_privacy(
         self, request: UserRequest, allow_preview_in_profile: bool = True
     ) -> PrivacyDecision:
@@ -118,7 +208,11 @@ class PrivacyPolicyEnforcer:
                 allow_cache=False,
                 allow_prompt_preview=False,
                 allow_telemetry=True,
-                reason=f"Privacy classification '{request.privacy_class.value}' strictly prohibits external transmission without an approved override exception; caching prohibited.",
+                reason=(
+                    f"Privacy classification '{request.privacy_class.value}' requires redacted transmission override for external transmission; caching prohibited."
+                    if ext_tx
+                    else f"Privacy classification '{request.privacy_class.value}' strictly prohibits external transmission without an approved override exception; caching prohibited."
+                ),
             )
 
         if has_sensitive_pattern:
