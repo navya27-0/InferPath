@@ -91,19 +91,25 @@ def get_deployment_profile(profile_str: str | None = None) -> DeploymentProfileC
 
     Lookup priority:
     1. Explicit function argument
-    2. INFERPATH_PROFILE environment variable
-    3. INFERPATH_DEPLOYMENT_MODE environment variable
-    4. Default: local-demo
+    2. INFERPATH_DEPLOYMENT_PROFILE environment variable
+    3. INFERPATH_PROFILE environment variable
+    4. INFERPATH_DEPLOYMENT_MODE environment variable
+    5. Environment detection: if INFERPATH_ENV or ENVIRONMENT is 'production'/'prod', defaults to production
+    6. Default: local-demo
     """
     raw = (
         profile_str
+        or os.getenv("INFERPATH_DEPLOYMENT_PROFILE")
         or os.getenv("INFERPATH_PROFILE")
         or os.getenv("INFERPATH_DEPLOYMENT_MODE")
-        or "local-demo"
     )
+    if not raw:
+        env_signal = (os.getenv("INFERPATH_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower()
+        raw = "production" if env_signal in ("production", "prod") else "local-demo"
+
     cleaned = raw.strip().lower()
 
-    # Map legacy aliases
+    # Map standardized aliases
     alias_map = {
         "protected": ProfileName.STAGING,
         "prod": ProfileName.PRODUCTION,
@@ -111,12 +117,22 @@ def get_deployment_profile(profile_str: str | None = None) -> DeploymentProfileC
         "demo": ProfileName.LOCAL_DEMO,
         "local": ProfileName.LOCAL_DEMO,
         "local-demo": ProfileName.LOCAL_DEMO,
+        "dev": ProfileName.LOCAL_DEMO,
+        "development": ProfileName.LOCAL_DEMO,
         "staging": ProfileName.STAGING,
         "stage": ProfileName.STAGING,
         "benchmark": ProfileName.BENCHMARK_OFFLINE,
         "benchmark-offline": ProfileName.BENCHMARK_OFFLINE,
         "offline": ProfileName.BENCHMARK_OFFLINE,
+        "eval": ProfileName.BENCHMARK_OFFLINE,
+        "evaluation": ProfileName.BENCHMARK_OFFLINE,
     }
 
-    selected_enum = alias_map.get(cleaned, ProfileName.LOCAL_DEMO)
+    if cleaned not in alias_map:
+        valid_profiles = sorted({p.value for p in ProfileName} | {"development", "evaluation"})
+        raise ValueError(
+            f"Invalid deployment profile '{raw}'. Supported profiles: {valid_profiles}"
+        )
+
+    selected_enum = alias_map[cleaned]
     return PROFILES[selected_enum]

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import hmac
+import math
 import os
 import uuid
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from inferpath import __version__
 from inferpath.config.deployment_profiles import (
@@ -48,6 +50,21 @@ class RespondRequest(BaseModel):
     maximum_latency_ms: float | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("minimum_quality", "maximum_cost_usd", "maximum_latency_ms")
+    @classmethod
+    def validate_finite_and_bounds(cls, v: float | None, info) -> float | None:
+        if v is None:
+            return v
+        if not math.isfinite(v):
+            raise ValueError(f"{info.field_name} must be a finite number, got {v}")
+        if info.field_name == "minimum_quality" and not (0.0 <= v <= 1.0):
+            raise ValueError(f"minimum_quality must be between 0.0 and 1.0, got {v}")
+        if info.field_name == "maximum_cost_usd" and (v < 0.0 or v > 1000.0):
+            raise ValueError(f"maximum_cost_usd must be between 0.0 and 1000.0, got {v}")
+        if info.field_name == "maximum_latency_ms" and (v < 0.0 or v > 300_000.0):
+            raise ValueError(f"maximum_latency_ms must be between 0.0 and 300000.0, got {v}")
+        return v
+
 
 class RespondResponse(BaseModel):
     """Sanitized response schema returned to clients."""
@@ -82,6 +99,9 @@ class RespondResponse(BaseModel):
     requested_maximum_latency_ms: float | None = None
     estimated_call_cost_usd: float | None = None
     actual_calculated_cost_usd: float | None = None
+    estimated_quality: float | None = None
+    validated_correctness: bool = True
+    empirical_quality: float | None = None
 
 
 def _constant_time_compare(val_a: str | None, val_b: str | None) -> bool:
@@ -193,6 +213,16 @@ def create_app(
         api_key if api_key is not None else GLOBAL_SECRET_MANAGER.get("INFERPATH_API_KEY", "")
     )
 
+    if (
+        pipeline is None
+        and active_profile.name == ProfileName.PRODUCTION
+        and (not required_api_key or not required_api_key.strip())
+    ):
+        raise RuntimeError(
+            "Deployment profile 'production' requires an explicit application API key, "
+            "but INFERPATH_API_KEY is not configured. Startup halted to prevent unauthenticated exposure."
+        )
+
     # Configure structured logging if enabled in profile
     if active_profile.structured_json_logging:
         configure_structured_logging(
@@ -252,6 +282,36 @@ def create_app(
                 "eligible_tiers": [
                     t.value if hasattr(t, "value") else str(t) for t in exc.eligible_tiers
                 ],
+            },
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        errors = exc.errors()
+        err_msg = "; ".join(
+            f"{'.'.join(str(loc) for loc in e.get('loc', []))}: {e.get('msg')}" for e in errors
+        )
+        is_constraint_error = any(
+            any(
+                k in str(e.get("loc", []))
+                for k in (
+                    "minimum_quality",
+                    "maximum_cost_usd",
+                    "maximum_latency_ms",
+                    "quality",
+                    "cost",
+                    "latency",
+                )
+            )
+            or "finite" in e.get("msg", "").lower()
+            for e in errors
+        )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "Invalid constraints" if is_constraint_error else "Bad request",
+                "detail": scrub_api_keys(err_msg),
+                "code": "INVALID_CONSTRAINTS" if is_constraint_error else "BAD_REQUEST",
             },
         )
 
@@ -447,6 +507,20 @@ def create_app(
             )
 
         # Numeric constraints validation
+        for name, val in [
+            ("minimum_quality", body.minimum_quality),
+            ("maximum_cost_usd", body.maximum_cost_usd),
+            ("maximum_latency_ms", body.maximum_latency_ms),
+        ]:
+            if val is not None and not math.isfinite(val):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Invalid constraints",
+                        "detail": f"{name} must be a finite number, got {val}",
+                        "code": "INVALID_CONSTRAINTS",
+                    },
+                )
         if body.minimum_quality is not None and not (0.0 <= body.minimum_quality <= 1.0):
             raise HTTPException(
                 status_code=400,
@@ -456,21 +530,25 @@ def create_app(
                     "code": "INVALID_CONSTRAINTS",
                 },
             )
-        if body.maximum_cost_usd is not None and body.maximum_cost_usd < 0.0:
+        if body.maximum_cost_usd is not None and (
+            body.maximum_cost_usd < 0.0 or body.maximum_cost_usd > 1000.0
+        ):
             raise HTTPException(
                 status_code=400,
                 detail={
                     "error": "Invalid constraints",
-                    "detail": f"maximum_cost_usd cannot be negative, got {body.maximum_cost_usd}",
+                    "detail": f"maximum_cost_usd must be between 0.0 and 1000.0, got {body.maximum_cost_usd}",
                     "code": "INVALID_CONSTRAINTS",
                 },
             )
-        if body.maximum_latency_ms is not None and body.maximum_latency_ms < 0.0:
+        if body.maximum_latency_ms is not None and (
+            body.maximum_latency_ms < 0.0 or body.maximum_latency_ms > 300_000.0
+        ):
             raise HTTPException(
                 status_code=400,
                 detail={
                     "error": "Invalid constraints",
-                    "detail": f"maximum_latency_ms cannot be negative, got {body.maximum_latency_ms}",
+                    "detail": f"maximum_latency_ms must be between 0.0 and 300000.0, got {body.maximum_latency_ms}",
                     "code": "INVALID_CONSTRAINTS",
                 },
             )
@@ -615,9 +693,26 @@ def create_app(
                 actual_calculated_cost_usd=result.actual_calculated_cost_usd.value
                 if result.actual_calculated_cost_usd
                 else None,
+                estimated_quality=result.estimated_quality,
+                validated_correctness=result.validated_correctness,
+                empirical_quality=result.empirical_quality,
             )
 
     return app
 
 
 app = create_app()
+
+
+def run(
+    host: str | None = None,
+    port: int = 8000,
+    profile_str: str | None = None,
+    **kwargs: Any,
+) -> None:
+    """Launch the InferPath API service honoring profile bind host defaults."""
+    import uvicorn
+
+    profile = get_deployment_profile(profile_str)
+    bind_host = host if host is not None else profile.default_bind_host
+    uvicorn.run("inferpath.api.main:app", host=bind_host, port=port, **kwargs)

@@ -14,6 +14,7 @@ from inferpath.models.domain import (
 )
 from inferpath.models.enums import PrivacyClass, ProvenanceLabel, RouteTier
 from inferpath.models.telemetry import ProvenanceValue
+from inferpath.router.formulation import DEFAULT_TIER_PRIORS
 from inferpath.security.hashing import hash_prompt
 
 if TYPE_CHECKING:
@@ -293,6 +294,25 @@ class ResultFinalizer:
         final_tier = output.tier
         prompt_digest = hash_prompt(request.prompt)
 
+        # Evaluate actual post-execution constraints
+        actual_constraints_satisfied = decision.constraints_satisfied
+        unsatisfied_actual = list(decision.unsatisfied_constraints)
+        if request.maximum_cost_usd is not None and total_cost_usd > request.maximum_cost_usd:
+            actual_constraints_satisfied = False
+            if "budget" not in unsatisfied_actual:
+                unsatisfied_actual.append("budget")
+        if request.maximum_latency_ms is not None and elapsed_ms > request.maximum_latency_ms:
+            actual_constraints_satisfied = False
+            if "latency" not in unsatisfied_actual:
+                unsatisfied_actual.append("latency")
+        if request.minimum_quality is not None and not validation_passed:
+            actual_constraints_satisfied = False
+            if "quality" not in unsatisfied_actual:
+                unsatisfied_actual.append("quality")
+
+        prior = DEFAULT_TIER_PRIORS.get(final_tier)
+        est_qual = prior.quality_prior if prior else None
+
         return PipelineResult(
             request_id=request.request_id,
             prompt_hash=prompt_digest,
@@ -359,9 +379,12 @@ class ResultFinalizer:
                 provenance=ProvenanceLabel.CALCULATED,
                 unit="USD",
             ),
-            constraints_satisfied=decision.constraints_satisfied,
-            unsatisfied_constraints=decision.unsatisfied_constraints,
+            constraints_satisfied=actual_constraints_satisfied,
+            unsatisfied_constraints=unsatisfied_actual,
             requested_minimum_quality=request.minimum_quality,
             requested_maximum_cost_usd=request.maximum_cost_usd,
             requested_maximum_latency_ms=request.maximum_latency_ms,
+            estimated_quality=est_qual,
+            validated_correctness=validation_passed,
+            empirical_quality=None,
         )

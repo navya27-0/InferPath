@@ -98,33 +98,52 @@ class ExactCache:
             )
 
     def init_schema(self) -> None:
-        """Initializes exact cache table and indexes synchronously."""
-        with sqlite3.connect(self.db_path) as conn:
+        """Initializes exact cache table and indexes synchronously with busy timeout."""
+        with sqlite3.connect(self.db_path, timeout=10.0) as conn:
             conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout = 5000;")
             conn.executescript(CACHE_SCHEMA_SQL)
             conn.commit()
 
     async def init_schema_async(self) -> None:
-        """Initializes exact cache table and indexes asynchronously."""
-        async with aiosqlite.connect(self.db_path) as db:
+        """Initializes exact cache table and indexes asynchronously with busy timeout."""
+        async with aiosqlite.connect(self.db_path, timeout=10.0) as db:
             await db.execute("PRAGMA journal_mode=WAL;")
+            await db.execute("PRAGMA busy_timeout = 5000;")
             await db.executescript(CACHE_SCHEMA_SQL)
             await db.commit()
 
     def get_schema_version(self) -> int:
-        """Returns the current database schema version."""
-        with sqlite3.connect(self.db_path) as conn:
+        """Returns the current database schema version, handling legacy tables gracefully."""
+        with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+            conn.execute("PRAGMA busy_timeout = 5000;")
             cursor = conn.cursor()
-            cursor.execute("SELECT MAX(version) FROM schema_version")
-            row = cursor.fetchone()
-            return int(row[0]) if row and row[0] is not None else 0
+            try:
+                cursor.execute("SELECT MAX(version) FROM schema_version")
+                row = cursor.fetchone()
+                return int(row[0]) if row and row[0] is not None else 0
+            except sqlite3.OperationalError:
+                # Legacy table without schema_version table
+                return 0
 
     async def get_schema_version_async(self) -> int:
         """Asynchronously returns the current database schema version."""
-        async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute("SELECT MAX(version) FROM schema_version")
-            row = await cursor.fetchone()
-            return int(row[0]) if row and row[0] is not None else 0
+        async with aiosqlite.connect(self.db_path, timeout=10.0) as db:
+            await db.execute("PRAGMA busy_timeout = 5000;")
+            try:
+                cursor = await db.execute("SELECT MAX(version) FROM schema_version")
+                row = await cursor.fetchone()
+                return int(row[0]) if row and row[0] is not None else 0
+            except sqlite3.OperationalError:
+                return 0
+
+    def migrate_if_needed(self) -> int:
+        """Applies schema migrations for legacy databases without schema_version."""
+        ver = self.get_schema_version()
+        if ver < CURRENT_SCHEMA_VERSION:
+            self.init_schema()
+            return CURRENT_SCHEMA_VERSION
+        return ver
 
     def lookup(self, cache_key: str) -> HandlerOutput | None:
         """
@@ -136,7 +155,8 @@ class ExactCache:
         FROM exact_cache
         WHERE cache_key = ?
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+            conn.execute("PRAGMA busy_timeout = 5000;")
             cursor = conn.cursor()
             cursor.execute(sql, (cache_key,))
             row = cursor.fetchone()
@@ -171,7 +191,12 @@ class ExactCache:
                 output.cache_hit = True
                 return output
             except Exception:
-                # Malformed payload handled safely without raising unhandled exception
+                # Corrupted or malformed payload detected - purge row to restore cache integrity
+                try:
+                    conn.execute("DELETE FROM exact_cache WHERE cache_key = ?", (cache_key,))
+                    conn.commit()
+                except Exception:
+                    pass
                 return None
 
     get = lookup
@@ -186,7 +211,8 @@ class ExactCache:
         FROM exact_cache
         WHERE cache_key = ?
         """
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=10.0) as db:
+            await db.execute("PRAGMA busy_timeout = 5000;")
             cursor = await db.execute(sql, (cache_key,))
             row = await cursor.fetchone()
             if not row:
@@ -217,6 +243,11 @@ class ExactCache:
                 output.cache_hit = True
                 return output
             except Exception:
+                try:
+                    await db.execute("DELETE FROM exact_cache WHERE cache_key = ?", (cache_key,))
+                    await db.commit()
+                except Exception:
+                    pass
                 return None
 
     get_async = lookup_async
@@ -235,6 +266,14 @@ class ExactCache:
         Synchronously stores or updates a validated response payload in the cache.
         Returns True on successful insertion/update.
         """
+        # Strict privacy enforcement: non-public or sensitive requests are NEVER stored in cache
+        if getattr(request, "privacy_class", None) != PrivacyClass.PUBLIC:
+            return False
+
+        # Strict privacy enforcement: non-public or sensitive requests are NEVER stored in cache
+        if getattr(request, "privacy_class", None) != PrivacyClass.PUBLIC:
+            return False
+
         route_str = route.value if isinstance(route, RouteTier) else str(route)
         now = datetime.now(UTC)
         expires_at = now + timedelta(seconds=max(1, ttl_seconds))
@@ -263,7 +302,8 @@ class ExactCache:
             latency_ms = excluded.latency_ms,
             expires_at = excluded.expires_at;
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+            conn.execute("PRAGMA busy_timeout = 5000;")
             try:
                 self._enforce_capacity(conn)
                 prompt_preview = (
@@ -354,7 +394,8 @@ class ExactCache:
             latency_ms = excluded.latency_ms,
             expires_at = excluded.expires_at;
         """
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=10.0) as db:
+            await db.execute("PRAGMA busy_timeout = 5000;")
             try:
                 await self._enforce_capacity_async(db)
                 prompt_preview = (

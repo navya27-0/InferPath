@@ -52,7 +52,7 @@ SENSITIVE_CONTENT_PATTERNS = [
         r"\b(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|xox[baprs]-[a-zA-Z0-9_\-]+)\b",
     ),
     re.compile(
-        r"\b(ssn|social security number|credit card|cvv|confidential internal|strictly confidential|proprietary\s+and\s+confidential|trade\s+secret)\b",
+        r"\b(ssn|social security number|credit card|cvv|confidential internal|strictly confidential|proprietary\s+and\s+confidential|trade[_\s]?secret)\b",
         re.IGNORECASE,
     ),
     re.compile(
@@ -62,11 +62,64 @@ SENSITIVE_CONTENT_PATTERNS = [
 ]
 
 
+def _normalize_text_for_sensitive_inspection(text: str) -> list[str]:
+    """Generates normalized variants of text to detect obfuscated secrets and PII."""
+    variants = [text]
+
+    # 1. De-space sequences of single isolated characters (e.g. 's e c r e t' -> 'secret', 'a p i _ k e y' -> 'api _ key')
+    despaced = re.sub(
+        r"(?:(?<=\s)|^)([a-zA-Z0-9])(?:\s+([a-zA-Z0-9]))+(?=(?:\s|$))",
+        lambda m: m.group(0).replace(" ", ""),
+        text,
+    )
+    if despaced not in variants:
+        variants.append(despaced)
+
+    # 2. Collapse spaces surrounding delimiter punctuation (e.g. 'api _ key' -> 'api_key')
+    for base in list(variants):
+        delim_collapsed = re.sub(r"\s*([_\-./])\s*", r"\1", base)
+        if delim_collapsed not in variants:
+            variants.append(delim_collapsed)
+
+    # 3. Remove common separator delimiters between letters (e.g. 's-e-c-r-e-t', 's_e_c_r_e_t')
+    for base in list(variants):
+        delimiters_removed = re.sub(r"(?<=[a-zA-Z0-9])[\-_./](?=[a-zA-Z0-9])", "", base)
+        if delimiters_removed not in variants:
+            variants.append(delimiters_removed)
+
+    # 4. Leetspeak substitutions (@ -> a, 4 -> a, 3 -> e, 1/! -> i, 0 -> o, $ -> s, 5 -> s, 7 -> t)
+    leet_map = str.maketrans(
+        {
+            "@": "a",
+            "4": "a",
+            "3": "e",
+            "1": "i",
+            "!": "i",
+            "0": "o",
+            "$": "s",
+            "5": "s",
+            "7": "t",
+        }
+    )
+    for base in list(variants):
+        leeted = base.translate(leet_map)
+        if leeted not in variants:
+            variants.append(leeted)
+
+    return variants
+
+
 def contains_sensitive_patterns(text: str | None) -> bool:
-    """Checks whether text matches any sensitive token, credential, or confidential pattern."""
+    """Checks whether text matches any sensitive token, credential, or confidential pattern,
+
+    including normalized obfuscations (de-spaced characters, delimiters, leetspeak).
+    """
     if not text:
         return False
-    return any(pattern.search(text) for pattern in SENSITIVE_CONTENT_PATTERNS)
+    for variant in _normalize_text_for_sensitive_inspection(text):
+        if any(pattern.search(variant) for pattern in SENSITIVE_CONTENT_PATTERNS):
+            return True
+    return False
 
 
 # Template intent keywords

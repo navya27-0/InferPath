@@ -1,9 +1,10 @@
 """Domain objects for requests, routing decisions, handler outputs, and pipeline results."""
 
+import math
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from inferpath.models.enums import PrivacyClass, ProvenanceLabel, RouteTier
 from inferpath.models.telemetry import ProvenanceValue
@@ -21,6 +22,23 @@ class TaskParameters(BaseModel):
     minimum_quality: float = Field(default=0.70, ge=0.0, le=1.0)
     maximum_cost_usd: float | None = None
     maximum_latency_ms: float | None = None
+
+    @field_validator("minimum_quality", "maximum_cost_usd", "maximum_latency_ms", "max_latency_ms")
+    @classmethod
+    def validate_finite_constraints(cls, v: float | None, info) -> float | None:
+        if v is None:
+            return v
+        if not math.isfinite(v):
+            raise ValueError(f"{info.field_name} must be a finite number, got {v}")
+        if info.field_name == "minimum_quality" and not (0.0 <= v <= 1.0):
+            raise ValueError(f"minimum_quality must be between 0.0 and 1.0, got {v}")
+        if info.field_name == "maximum_cost_usd" and (v < 0.0 or v > 1000.0):
+            raise ValueError(f"maximum_cost_usd must be between 0.0 and 1000.0, got {v}")
+        if info.field_name in ("maximum_latency_ms", "max_latency_ms") and (
+            v < 0.0 or v > 300_000.0
+        ):
+            raise ValueError(f"{info.field_name} must be between 0.0 and 300000.0, got {v}")
+        return v
 
 
 class UserRequest(BaseModel):
@@ -224,6 +242,9 @@ class PipelineResult(BaseModel):
     provider_reported_cost_usd: ProvenanceValue[float] | None = None
     estimated_call_cost_usd: ProvenanceValue[float] | None = None
     actual_calculated_cost_usd: ProvenanceValue[float] | None = None
+    estimated_quality: float | None = None
+    validated_correctness: bool = True
+    empirical_quality: float | None = None
     constraints_satisfied: bool = True
     unsatisfied_constraints: list[str] = Field(default_factory=list)
     requested_minimum_quality: float | None = None

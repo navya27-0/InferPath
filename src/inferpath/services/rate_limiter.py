@@ -109,6 +109,12 @@ class RateLimiter(BaseRateLimiter):
             }
 
 
+class RateLimiterBackendError(Exception):
+    """Raised when the distributed rate limiter backend fails in fail-closed mode."""
+
+    pass
+
+
 class DistributedRateLimiter(BaseRateLimiter):
     """
     Interface and reference contract for distributed rate limiting across horizontal workers.
@@ -120,8 +126,11 @@ class DistributedRateLimiter(BaseRateLimiter):
     - Atomic window: Remove entries older than `now - 60.0`, count remaining entries,
       and append current timestamp if under quota.
 
-    If no external client is provided or the connection is unavailable, it gracefully
-    falls back to process-local sliding window tracking.
+    Operational Controls:
+    - fail_closed=True: In production, requires operational Redis backend; raises
+      RateLimiterBackendError on outages to prevent quota evasion.
+    - fail_closed=False: Degrades to bounded process-local tracking while recording
+      `is_degraded=True` and incrementing failure count for health telemetry.
     """
 
     def __init__(
@@ -129,15 +138,26 @@ class DistributedRateLimiter(BaseRateLimiter):
         redis_client: Any | None = None,
         requests_per_minute: int = 120,
         key_prefix: str = "inferpath:ratelimit:",
+        fail_closed: bool = False,
     ):
         self.redis_client = redis_client
         self.requests_per_minute = requests_per_minute
         self.key_prefix = key_prefix
+        self.fail_closed = fail_closed
+        self.is_degraded: bool = False
+        self.failure_count: int = 0
         self._fallback_limiter = RateLimiter(requests_per_minute=requests_per_minute)
 
     def is_allowed(self, client_id: str) -> bool:
         """Determines if request is allowed using distributed backend or fallback."""
         if self.redis_client is None:
+            if self.fail_closed:
+                self.is_degraded = True
+                self.failure_count += 1
+                raise RateLimiterBackendError(
+                    "Distributed rate limiter requires active Redis backend when fail_closed=True."
+                )
+            self.is_degraded = True
             return self._fallback_limiter.is_allowed(client_id)
 
         try:
@@ -166,28 +186,45 @@ class DistributedRateLimiter(BaseRateLimiter):
                 res = self.redis_client.eval(
                     lua_script, 1, key, now, cutoff, self.requests_per_minute, 65
                 )
+                self.is_degraded = False
                 return bool(res)
 
-            pipe = self.redis_client.pipeline()
+            try:
+                pipe = self.redis_client.pipeline(transaction=True)
+            except TypeError:
+                pipe = self.redis_client.pipeline()
             pipe.zremrangebyscore(key, "-inf", cutoff)
             pipe.zcard(key)
             results = pipe.execute()
             count = results[1] if len(results) > 1 else (results[0] if results else 0)
 
             if count < self.requests_per_minute:
-                add_pipe = self.redis_client.pipeline()
+                try:
+                    add_pipe = self.redis_client.pipeline(transaction=True)
+                except TypeError:
+                    add_pipe = self.redis_client.pipeline()
                 add_pipe.zadd(key, {str(now): now})
                 add_pipe.expire(key, 65)
                 add_pipe.execute()
+                self.is_degraded = False
                 return True
+            self.is_degraded = False
             return False
-        except Exception:
+        except Exception as err:
+            self.is_degraded = True
+            self.failure_count += 1
+            if self.fail_closed:
+                raise RateLimiterBackendError(
+                    f"Distributed rate limiter backend error: {err}"
+                ) from err
             # Degrade gracefully to process-local tracking on external store failure
             return self._fallback_limiter.is_allowed(client_id)
 
     def reset(self) -> None:
         """Resets all rate limiting state across the distributed store or fallback."""
         if self.redis_client is None:
+            if self.fail_closed:
+                raise RateLimiterBackendError("No Redis backend available to reset.")
             self._fallback_limiter.reset()
             return
 
@@ -195,12 +232,23 @@ class DistributedRateLimiter(BaseRateLimiter):
             keys = self.redis_client.keys(f"{self.key_prefix}*")
             if keys:
                 self.redis_client.delete(*keys)
-        except Exception:
+            self.is_degraded = False
+        except Exception as err:
+            self.is_degraded = True
+            self.failure_count += 1
+            if self.fail_closed:
+                raise RateLimiterBackendError(f"Backend reset failure: {err}") from err
             self._fallback_limiter.reset()
 
     def get_remaining(self, client_id: str) -> int:
         """Returns the number of remaining requests allowed for client_id in the current window."""
         if self.redis_client is None:
+            if self.fail_closed:
+                self.is_degraded = True
+                self.failure_count += 1
+                raise RateLimiterBackendError(
+                    "Distributed rate limiter requires active Redis backend when fail_closed=True."
+                )
             return self._fallback_limiter.get_remaining(client_id)
 
         try:
@@ -212,6 +260,13 @@ class DistributedRateLimiter(BaseRateLimiter):
             pipe.zcard(key)
             results = pipe.execute()
             count = results[1] if len(results) > 1 else (results[0] if results else 0)
+            self.is_degraded = False
             return max(0, self.requests_per_minute - count)
-        except Exception:
+        except Exception as err:
+            self.is_degraded = True
+            self.failure_count += 1
+            if self.fail_closed:
+                raise RateLimiterBackendError(
+                    f"Distributed rate limiter backend error: {err}"
+                ) from err
             return self._fallback_limiter.get_remaining(client_id)

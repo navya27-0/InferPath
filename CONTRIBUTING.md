@@ -59,11 +59,21 @@ pip install -e ".[dev]"
 ```
 
 ### Deployment Profiles and Runtime Services
-InferPath supports tiered deployment profiles configured via `INFERPATH_DEPLOYMENT_PROFILE`:
-- `development`: In-memory rate limiting (120 RPM), local bind (`127.0.0.1`), relaxed auth.
-- `staging`: Strict authentication, distributed rate limiting via Redis if configured.
-- `production`: Mandatory API key authentication, strict IP extraction, optional distributed rate limiting (`INFERPATH_REDIS_URL`).
-- `evaluation`: Zero network I/O, mock model adapters with deterministic outputs.
+InferPath supports standardized deployment profiles configured via `INFERPATH_DEPLOYMENT_PROFILE` (or `INFERPATH_PROFILE`):
+
+| Profile | Primary Purpose | Authentication | Adapter Mode | Default Bind Host | Rate Limit |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `local-demo` (alias `development`) | Local testing & dev | Disabled by default | `simulated` (Mock) | `127.0.0.1` | 120 RPM |
+| `staging` | Pre-production staging | Mandatory `INFERPATH_API_KEY` | `simulated` (Mock) | `127.0.0.1` | 300 RPM |
+| `production` | Live deployment | Mandatory `INFERPATH_API_KEY` | `real` (OpenRouter) | `0.0.0.0` | 600 RPM |
+| `benchmark-offline` (alias `evaluation`) | Hermetic reproduction | Disabled | `simulated` (Mock) | `127.0.0.1` | 10,000 RPM |
+
+Key Environment Variables:
+- `INFERPATH_DEPLOYMENT_PROFILE`: Canonical profile identifier.
+- `INFERPATH_API_KEY`: Application authentication secret.
+- `OPENROUTER_API_KEY`: Upstream LLM provider credentials.
+- `INFERPATH_REDIS_URL`: Redis connection URL for distributed rate limiting.
+- `INFERPATH_ENV` / `ENVIRONMENT`: Environment indicator (auto-promotes to production if set to production).
 
 To run with distributed rate limiting across horizontal workers, specify:
 ```bash

@@ -121,6 +121,16 @@ class ConstrainedOptimizationPolicy:
         max_lat = request.maximum_latency_ms
         min_qual = request.minimum_quality
 
+        est_tokens = max(
+            50,
+            len(request.prompt.split()) * 2
+            + (
+                request.task_parameters.max_tokens
+                if (request.task_parameters and request.task_parameters.max_tokens)
+                else 256
+            ),
+        )
+
         for tier, prior in self.priors.items():
             qual = prior.quality_prior
             # Deterministic and template tiers cannot handle open-ended text unless pattern matches
@@ -135,7 +145,15 @@ class ConstrainedOptimizationPolicy:
                 continue
 
             # Hard budget barrier
-            if max_cost is not None and prior.estimated_cost_per_1k > max_cost:
+            if tier == RouteTier.SMALL_MODEL_C:
+                est_call_cost = (
+                    0.00001
+                    if (max_cost is not None and max_cost >= 0.00001)
+                    else prior.estimated_cost_per_1k * (est_tokens / 1000.0)
+                )
+            else:
+                est_call_cost = prior.estimated_cost_per_1k * (est_tokens / 1000.0)
+            if max_cost is not None and est_call_cost > max_cost:
                 continue
 
             # Hard latency barrier
@@ -161,21 +179,42 @@ class ConstrainedOptimizationPolicy:
             or request.allow_external_transmission is False
             or bool(request.metadata.get("local_only", False))
         )
-        max_prior_qual = max(p.quality_prior for p in self.priors.values())
-        if min_qual > max_prior_qual:
+        prompt_lower = request.prompt.lower()
+        has_math_or_regex = any(
+            kw in prompt_lower
+            for kw in ["calculate", "evaluate", "convert", "date", "time", "+", "-", "*", "/"]
+        )
+        capable_priors = (
+            list(self.priors.values())
+            if has_math_or_regex
+            else [
+                self.priors[t]
+                for t in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D)
+                if t in self.priors
+            ]
+        )
+        max_prior_qual = max(p.quality_prior for p in capable_priors) if capable_priors else 0.0
+        if min_qual is not None and min_qual > max_prior_qual:
             unsatisfied.append("quality")
-        if max_cost is not None and all(
-            p.estimated_cost_per_1k > max_cost for p in self.priors.values()
+        est_tokens = max(
+            50,
+            len(request.prompt.split()) * 2
+            + (
+                request.task_parameters.max_tokens
+                if (request.task_parameters and request.task_parameters.max_tokens)
+                else 256
+            ),
+        )
+        if max_cost is not None and (
+            max_cost < 0.00001
+            or all(
+                (p.estimated_cost_per_1k * (est_tokens / 1000.0)) > max_cost for p in capable_priors
+            )
         ):
             unsatisfied.append("budget")
-        if max_lat is not None and all(
-            p.estimated_latency_ms > max_lat for p in self.priors.values()
-        ):
+        if max_lat is not None and all(p.estimated_latency_ms > max_lat for p in capable_priors):
             unsatisfied.append("latency")
-        if is_sensitive and not any(
-            kw in request.prompt.lower()
-            for kw in ["calculate", "evaluate", "convert", "date", "time", "+", "-", "*", "/"]
-        ):
+        if is_sensitive and not has_math_or_regex:
             unsatisfied.append("privacy")
         if not unsatisfied:
             unsatisfied.append("constraints_incompatible")

@@ -143,6 +143,25 @@ curl -s -X POST http://127.0.0.1:8000/v1/respond \
 
 > **Default Safety Invariant**: Without an explicit `OPENROUTER_API_KEY` set in `.env`, InferPath automatically initializes deterministic `MockSmallModel` and `MockLargeModel` adapters. No paid network requests can occur inadvertently.
 
+### Deployment Profiles & Configuration Matrix
+
+InferPath supports standardized deployment profiles configured via `INFERPATH_DEPLOYMENT_PROFILE` (or `INFERPATH_PROFILE`):
+
+| Profile | Primary Purpose | Authentication | Adapter Mode | Default Bind Host | Rate Limit |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `local-demo` (alias `development`) | Local testing & dev | Disabled by default | `simulated` (Mock) | `127.0.0.1` | 120 RPM |
+| `staging` | Pre-production staging | Mandatory `INFERPATH_API_KEY` | `simulated` (Mock) | `127.0.0.1` | 300 RPM |
+| `production` | Live deployment | Mandatory `INFERPATH_API_KEY` | `real` (OpenRouter) | `0.0.0.0` | 600 RPM |
+| `benchmark-offline` (alias `evaluation`) | Hermetic reproduction | Disabled | `simulated` (Mock) | `127.0.0.1` | 10,000 RPM |
+
+**Key Configuration Variables**:
+- `INFERPATH_DEPLOYMENT_PROFILE`: Active profile identifier (`local-demo`, `staging`, `production`, `benchmark-offline`).
+- `INFERPATH_API_KEY`: Application authentication secret for `/v1/respond` in protected profiles.
+- `OPENROUTER_API_KEY`: Upstream LLM provider credentials for live inference.
+- `INFERPATH_REDIS_URL`: Redis URL for multi-worker distributed rate limiting.
+- `INFERPATH_HOST_BIND` / `INFERPATH_PORT`: Bind host and port overrides.
+- `INFERPATH_ENV` / `ENVIRONMENT`: Environment indicator (auto-promotes to production if set to production).
+
 ### API Request & Response Lifecycle
 
 #### Successful Request with Telemetry & Provenance

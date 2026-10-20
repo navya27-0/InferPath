@@ -15,9 +15,18 @@ from inferpath.config.settings import (
     load_settings,
 )
 from inferpath.security.privacy import PrivacyPolicyEnforcer
+from inferpath.security.secret_manager import GLOBAL_SECRET_MANAGER
 from inferpath.telemetry.database import DatabaseManager
 
 _original_socket_connect = socket.socket.connect
+
+
+@pytest.fixture(autouse=True)
+def reset_secret_manager_cache():
+    """Ensure secret manager cache does not leak across test boundaries."""
+    GLOBAL_SECRET_MANAGER.clear_cache()
+    yield
+    GLOBAL_SECRET_MANAGER.clear_cache()
 
 
 @pytest.fixture(autouse=True)

@@ -56,6 +56,12 @@ class CircuitBreakerOpenError(OpenRouterError):
     pass
 
 
+class UnknownModelPricingError(OpenRouterError):
+    """Raised when a model ID is not configured in the active pricing table."""
+
+    pass
+
+
 class CircuitBreaker:
     """
     Standard state-machine circuit breaker.
@@ -124,6 +130,7 @@ class OpenRouterAdapter:
         async_client: httpx.AsyncClient | None = None,
         budget_tracker: RunBudgetTracker | None = None,
         circuit_breaker: CircuitBreaker | None = None,
+        strict_pricing: bool = False,
     ):
         self.model_id = model_id
         self.pricing_table = pricing_table
@@ -136,6 +143,7 @@ class OpenRouterAdapter:
         self._async_client = async_client
         self.budget_tracker = budget_tracker
         self.circuit_breaker = circuit_breaker or CircuitBreaker()
+        self.strict_pricing = strict_pricing
 
     def _get_headers(self) -> dict[str, str]:
         headers = {
@@ -155,10 +163,15 @@ class OpenRouterAdapter:
             "max_tokens": params.get("max_tokens", 1024),
         }
 
-    def _calculate_cost(self, input_tokens: int, output_tokens: int) -> float:
-        rates = self.pricing_table.rates_per_1m.get(
-            self.model_id, {"prompt": 0.0, "completion": 0.0}
-        )
+    def _calculate_cost(self, input_tokens: int, output_tokens: int) -> float | None:
+        if self.model_id not in self.pricing_table.rates_per_1m:
+            if self.strict_pricing:
+                raise UnknownModelPricingError(
+                    f"Model '{self.model_id}' is not present in pricing table (effective {self.price_table_date}). Cannot calculate cost."
+                )
+            return None
+
+        rates = self.pricing_table.rates_per_1m[self.model_id]
         prompt_rate = rates.get("prompt", 0.0)
         completion_rate = rates.get("completion", 0.0)
         cost = (input_tokens / 1_000_000.0) * prompt_rate + (
@@ -203,7 +216,7 @@ class OpenRouterAdapter:
                         input_tokens = p_tok
                         output_tokens = c_tok
                         cost_calculated = self._calculate_cost(input_tokens, output_tokens)
-                        usage_available = True
+                        usage_available = cost_calculated is not None
                 except (ValueError, TypeError):
                     input_tokens = None
                     output_tokens = None
@@ -316,14 +329,11 @@ class OpenRouterAdapter:
 
         except (OpenRouterRateLimitError, OpenRouterProviderError, OpenRouterTimeoutError):
             self.circuit_breaker.record_failure()
-            if self.budget_tracker and reservation_token:
-                self.budget_tracker.release(reservation_token)
-            raise
-        except Exception:
-            if self.budget_tracker and reservation_token:
-                self.budget_tracker.release(reservation_token)
             raise
         finally:
+            if self.budget_tracker and reservation_token is not None:
+                self.budget_tracker.release(reservation_token)
+                reservation_token = None
             if close_client:
                 client.close()
 
@@ -408,14 +418,11 @@ class OpenRouterAdapter:
 
         except (OpenRouterRateLimitError, OpenRouterProviderError, OpenRouterTimeoutError):
             self.circuit_breaker.record_failure()
-            if self.budget_tracker and reservation_token:
-                self.budget_tracker.release(reservation_token)
-            raise
-        except Exception:
-            if self.budget_tracker and reservation_token:
-                self.budget_tracker.release(reservation_token)
             raise
         finally:
+            if self.budget_tracker and reservation_token is not None:
+                self.budget_tracker.release(reservation_token)
+                reservation_token = None
             if close_client:
                 await async_client.aclose()
 

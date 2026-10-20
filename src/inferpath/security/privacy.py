@@ -72,7 +72,7 @@ class PrivacyPolicyEnforcer:
         self, request: UserRequest, allow_preview_in_profile: bool = True
     ) -> PrivacyDecision:
         """Computes a unified, unambiguous PrivacyDecision across routing, caching, logging, and fallback."""
-        from inferpath.router.analyzer import SENSITIVE_CONTENT_PATTERNS
+        from inferpath.router.analyzer import contains_sensitive_patterns
 
         text_items = [request.prompt]
         if request.context:
@@ -80,9 +80,23 @@ class PrivacyPolicyEnforcer:
         if request.metadata:
             text_items.extend(f"{k}: {v}" for k, v in request.metadata.items())
         combined = " \n ".join(text_items)
-        has_sensitive_pattern = any(
-            pattern.search(combined) for pattern in SENSITIVE_CONTENT_PATTERNS
+        has_sensitive_pattern = contains_sensitive_patterns(combined)
+
+        # Explicit policy boundary: treat uncertain classification as defensive local-only
+        is_uncertain = bool(
+            request.metadata.get("uncertain_classification", False)
+            or (float(request.metadata.get("classification_confidence", 1.0)) < 0.7)
+            or request.metadata.get("privacy_uncertain", False)
         )
+        if is_uncertain:
+            return PrivacyDecision(
+                allow_local_processing=True,
+                allow_external_transmission=False,
+                allow_cache=False,
+                allow_prompt_preview=False,
+                allow_telemetry=True,
+                reason="Privacy classification is uncertain; enforced local-only execution and caching prohibited as a defensive boundary.",
+            )
 
         is_private = request.privacy_class in (
             PrivacyClass.INTERNAL,
