@@ -57,6 +57,7 @@ class ExactCache:
         self.max_entries = max_entries
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self.init_schema()
+        self.migrate_if_needed()
 
     def _enforce_capacity(self, conn: sqlite3.Connection) -> None:
         """Evicts expired entries and enforces max_entries capacity via LRU/FIFO."""

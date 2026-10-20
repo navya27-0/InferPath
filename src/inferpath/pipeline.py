@@ -718,18 +718,42 @@ class RequestPipeline:
             raise PipelineExecutionError(f"Unsupported execution tier: {tier}")
 
         # Enforce verified redaction on non-public requests permitted under override
+        has_sensitive = (
+            contains_sensitive_patterns(request.prompt)
+            or (request.context is not None and contains_sensitive_patterns(request.context))
+            or (
+                bool(request.metadata)
+                and any(
+                    contains_sensitive_patterns(f"{k}: {v}") for k, v in request.metadata.items()
+                )
+            )
+        )
         outbound_prompt = request.prompt
-        if request.privacy_class != PrivacyClass.PUBLIC or contains_sensitive_patterns(
-            request.prompt
-        ):
+        if request.privacy_class != PrivacyClass.PUBLIC or has_sensitive:
             redacted_req = self.privacy_enforcer.redact_request_for_transmission(request)
             if not self.privacy_enforcer.verify_redacted(redacted_req.prompt):
                 raise PrivacyViolationError(
-                    "Outbound request failed post-redaction verification: residual sensitive content detected.",
+                    "Outbound request failed post-redaction verification: residual sensitive prompt content detected.",
                     privacy_class=request.privacy_class.value,
                     target_tier=tier.value,
                 )
+            if redacted_req.context and not self.privacy_enforcer.verify_redacted(
+                redacted_req.context
+            ):
+                raise PrivacyViolationError(
+                    "Outbound request failed post-redaction verification: residual sensitive context content detected.",
+                    privacy_class=request.privacy_class.value,
+                    target_tier=tier.value,
+                )
+            for mk, mv in redacted_req.metadata.items():
+                if not self.privacy_enforcer.verify_redacted(f"{mk}: {mv}"):
+                    raise PrivacyViolationError(
+                        "Outbound request failed post-redaction verification: residual sensitive metadata content detected.",
+                        privacy_class=request.privacy_class.value,
+                        target_tier=tier.value,
+                    )
             outbound_prompt = redacted_req.prompt
+            request = redacted_req
 
         if not isinstance(adapter, OpenRouterAdapter) and self.budget_tracker:
             est_cost = self.budget_tracker.estimate_call_cost(
@@ -738,7 +762,10 @@ class RequestPipeline:
             res_tok = self.budget_tracker.reserve(est_cost)
             try:
                 model_res = adapter.generate(
-                    outbound_prompt, max_tokens=request.task_parameters.max_tokens
+                    outbound_prompt,
+                    max_tokens=request.task_parameters.max_tokens,
+                    context=request.context,
+                    metadata=request.metadata,
                 )
             except Exception:
                 self.budget_tracker.release(res_tok)
@@ -746,7 +773,10 @@ class RequestPipeline:
             self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
         else:
             model_res = adapter.generate(
-                outbound_prompt, max_tokens=request.task_parameters.max_tokens
+                outbound_prompt,
+                max_tokens=request.task_parameters.max_tokens,
+                context=request.context,
+                metadata=request.metadata,
             )
         return self._model_result_to_handler_output(model_res, tier)
 
@@ -767,18 +797,42 @@ class RequestPipeline:
             raise PipelineExecutionError(f"Unsupported execution tier: {tier}")
 
         # Enforce verified redaction on non-public requests permitted under override
+        has_sensitive = (
+            contains_sensitive_patterns(request.prompt)
+            or (request.context is not None and contains_sensitive_patterns(request.context))
+            or (
+                bool(request.metadata)
+                and any(
+                    contains_sensitive_patterns(f"{k}: {v}") for k, v in request.metadata.items()
+                )
+            )
+        )
         outbound_prompt = request.prompt
-        if request.privacy_class != PrivacyClass.PUBLIC or contains_sensitive_patterns(
-            request.prompt
-        ):
+        if request.privacy_class != PrivacyClass.PUBLIC or has_sensitive:
             redacted_req = self.privacy_enforcer.redact_request_for_transmission(request)
             if not self.privacy_enforcer.verify_redacted(redacted_req.prompt):
                 raise PrivacyViolationError(
-                    "Outbound request failed post-redaction verification: residual sensitive content detected.",
+                    "Outbound request failed post-redaction verification: residual sensitive prompt content detected.",
                     privacy_class=request.privacy_class.value,
                     target_tier=tier.value,
                 )
+            if redacted_req.context and not self.privacy_enforcer.verify_redacted(
+                redacted_req.context
+            ):
+                raise PrivacyViolationError(
+                    "Outbound request failed post-redaction verification: residual sensitive context content detected.",
+                    privacy_class=request.privacy_class.value,
+                    target_tier=tier.value,
+                )
+            for mk, mv in redacted_req.metadata.items():
+                if not self.privacy_enforcer.verify_redacted(f"{mk}: {mv}"):
+                    raise PrivacyViolationError(
+                        "Outbound request failed post-redaction verification: residual sensitive metadata content detected.",
+                        privacy_class=request.privacy_class.value,
+                        target_tier=tier.value,
+                    )
             outbound_prompt = redacted_req.prompt
+            request = redacted_req
 
         if not isinstance(adapter, OpenRouterAdapter) and self.budget_tracker:
             est_cost = self.budget_tracker.estimate_call_cost(
@@ -787,7 +841,10 @@ class RequestPipeline:
             res_tok = self.budget_tracker.reserve(est_cost)
             try:
                 model_res = await adapter.generate_async(
-                    outbound_prompt, max_tokens=request.task_parameters.max_tokens
+                    outbound_prompt,
+                    max_tokens=request.task_parameters.max_tokens,
+                    context=request.context,
+                    metadata=request.metadata,
                 )
             except Exception:
                 self.budget_tracker.release(res_tok)
@@ -795,7 +852,10 @@ class RequestPipeline:
             self.budget_tracker.reconcile(res_tok, model_res.cost_usd_calculated)
         else:
             model_res = await adapter.generate_async(
-                outbound_prompt, max_tokens=request.task_parameters.max_tokens
+                outbound_prompt,
+                max_tokens=request.task_parameters.max_tokens,
+                context=request.context,
+                metadata=request.metadata,
             )
         return self._model_result_to_handler_output(model_res, tier)
 

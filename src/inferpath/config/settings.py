@@ -139,6 +139,7 @@ class Settings(BaseSettings):
     database_path: str = Field(default="data/storage/inferpath.db")
     config_dir: str = Field(default="configs")
     log_level: str = Field(default="INFO")
+    strict_privacy: bool = Field(default=True)
 
     openrouter: OpenRouterSettings = Field(default_factory=OpenRouterSettings)
     routing: RoutingSettings = Field(default_factory=RoutingSettings)
@@ -148,17 +149,29 @@ class Settings(BaseSettings):
     def apply_env_fallbacks(cls, data: Any) -> Any:
         if isinstance(data, dict):
             if "environment" not in data:
-                env = os.getenv("INFERPATH_ENVIRONMENT") or os.getenv("ENVIRONMENT")
+                env = (
+                    os.getenv("INFERPATH_ENV")
+                    or os.getenv("INFERPATH_ENVIRONMENT")
+                    or os.getenv("ENVIRONMENT")
+                )
                 if env:
                     data["environment"] = env
             if "database_path" not in data:
-                db = os.getenv("INFERPATH_DATABASE_PATH") or os.getenv("DATABASE_PATH")
+                db = (
+                    os.getenv("INFERPATH_DB_PATH")
+                    or os.getenv("INFERPATH_DATABASE_PATH")
+                    or os.getenv("DATABASE_PATH")
+                )
                 if db:
                     data["database_path"] = db
             if "log_level" not in data:
                 lvl = os.getenv("INFERPATH_LOG_LEVEL") or os.getenv("LOG_LEVEL")
                 if lvl:
                     data["log_level"] = lvl
+            if "strict_privacy" not in data:
+                sp = os.getenv("INFERPATH_STRICT_PRIVACY")
+                if sp is not None:
+                    data["strict_privacy"] = sp.strip().lower() in ("true", "1", "yes")
         return data
 
 
@@ -207,27 +220,67 @@ def load_settings(base_dir: Path | None = None) -> Settings:
         if "max_usd_per_run" in rt_cfg:
             settings.routing.max_usd_per_run = float(rt_cfg["max_usd_per_run"])
 
-    # OpenRouter API key and budget from environment variable
+    # OpenRouter API key, base URL, and model selection from environment variables
     env_api_key = os.getenv("OPENROUTER_API_KEY")
     if env_api_key:
         settings.openrouter.api_key = env_api_key
 
+    env_base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("INFERPATH_OPENROUTER_BASE_URL")
+    if env_base_url:
+        settings.openrouter.base_url = env_base_url
+
+    env_small_model = os.getenv("INFERPATH_SMALL_MODEL") or os.getenv("OPENROUTER_SMALL_MODEL")
+    if env_small_model:
+        settings.openrouter.small_model = env_small_model
+
+    env_large_model = os.getenv("INFERPATH_LARGE_MODEL") or os.getenv("OPENROUTER_LARGE_MODEL")
+    if env_large_model:
+        settings.openrouter.large_model = env_large_model
+
+    # Budget cap from environment
     env_budget = os.getenv("MAX_USD_PER_RUN") or os.getenv("INFERPATH_MAX_USD_PER_RUN")
     if env_budget:
         with contextlib.suppress(ValueError):
             settings.routing.max_usd_per_run = float(env_budget)
 
-    env_environment = os.getenv("INFERPATH_ENVIRONMENT") or os.getenv("ENVIRONMENT")
+    # Environment
+    env_environment = (
+        os.getenv("INFERPATH_ENV") or os.getenv("INFERPATH_ENVIRONMENT") or os.getenv("ENVIRONMENT")
+    )
     if env_environment:
         settings.environment = env_environment
 
+    # Log level
     env_log_level = os.getenv("INFERPATH_LOG_LEVEL") or os.getenv("LOG_LEVEL")
     if env_log_level:
         settings.log_level = env_log_level
 
-    env_db = os.getenv("INFERPATH_DATABASE_PATH") or os.getenv("DATABASE_PATH")
+    # Database path
+    env_db = (
+        os.getenv("INFERPATH_DB_PATH")
+        or os.getenv("INFERPATH_DATABASE_PATH")
+        or os.getenv("DATABASE_PATH")
+    )
     if env_db:
         settings.database_path = env_db
+
+    # Routing toggles
+    env_enable_cache = os.getenv("INFERPATH_ENABLE_CACHE")
+    if env_enable_cache is not None:
+        settings.routing.enable_cache = env_enable_cache.strip().lower() in ("true", "1", "yes")
+
+    env_enable_fallback = os.getenv("INFERPATH_ENABLE_FALLBACK")
+    if env_enable_fallback is not None:
+        settings.routing.enable_fallback = env_enable_fallback.strip().lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+
+    # Strict privacy toggle
+    env_strict_privacy = os.getenv("INFERPATH_STRICT_PRIVACY")
+    if env_strict_privacy is not None:
+        settings.strict_privacy = env_strict_privacy.strip().lower() in ("true", "1", "yes")
 
     return settings
 
