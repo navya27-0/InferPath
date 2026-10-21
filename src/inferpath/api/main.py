@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import math
 import os
+import sys
 import uuid
 from typing import Any
 
@@ -246,6 +247,15 @@ def create_app(
     host_bind = (
         os.getenv("INFERPATH_HOST_BIND") or os.getenv("INFERPATH_BIND_HOST") or os.getenv("HOST")
     )
+    if not host_bind:
+        # Detect if Uvicorn was launched with explicit --host CLI arguments
+        for i, arg in enumerate(sys.argv):
+            if arg == "--host" and i + 1 < len(sys.argv):
+                host_bind = sys.argv[i + 1]
+                break
+            elif arg.startswith("--host="):
+                host_bind = arg.split("=", 1)[1]
+                break
     if host_bind:
         clean_bind = host_bind.strip().lower()
         is_loopback = clean_bind in ("127.0.0.1", "localhost", "::1") or clean_bind.startswith(
@@ -393,11 +403,62 @@ def create_app(
             },
         )
 
+    def _verify_auth(req: Request, operation_desc: str = "request execution") -> None:
+        client_key = req.headers.get("X-API-Key")
+        if not client_key:
+            auth_header = req.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                client_key = auth_header[7:].strip()
+
+        if active_profile.require_api_key:
+            if not required_api_key or not _constant_time_compare(client_key, required_api_key):
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "error": "Unauthorized",
+                        "detail": f"Deployment profile '{active_profile.name.value}' requires valid API key authentication for {operation_desc}.",
+                        "code": "UNAUTHORIZED",
+                    },
+                )
+        elif required_api_key and not _constant_time_compare(client_key, required_api_key):
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "error": "Unauthorized",
+                    "detail": "Invalid or missing X-API-Key header.",
+                    "code": "UNAUTHORIZED",
+                },
+            )
+
     @app.get("/health")
     @app.get("/v1/health")
-    async def health_check():
+    async def health_check(request: Request):
+        # Determine whether caller is authenticated or if unauthenticated profile is active
+        is_authenticated = False
+        client_key = request.headers.get("X-API-Key")
+        if not client_key:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                client_key = auth_header[7:].strip()
+        if (
+            required_api_key
+            and _constant_time_compare(client_key, required_api_key)
+            or not active_profile.require_api_key
+            and not required_api_key
+        ):
+            is_authenticated = True
+
         is_degraded = getattr(limiter, "is_degraded", False)
         status_str = "degraded" if is_degraded else "healthy"
+
+        # Under protected profiles without operator authentication, emit minimal liveness status
+        if not is_authenticated:
+            return {
+                "status": status_str,
+                "service": "inferpath",
+                "version": __version__,
+            }
+
         return {
             "status": status_str,
             "service": "inferpath",
@@ -431,7 +492,8 @@ def create_app(
 
     @app.get("/health/dependencies")
     @app.get("/v1/health/dependencies")
-    async def health_dependencies():
+    async def health_dependencies(request: Request):
+        _verify_auth(request, operation_desc="dependency diagnostics")
         schema_version = 0
         db_status = "ok"
         try:
@@ -464,7 +526,8 @@ def create_app(
         }
 
     @app.get("/metrics")
-    async def prometheus_metrics():
+    async def prometheus_metrics(request: Request):
+        _verify_auth(request, operation_desc="operational metrics")
         return Response(
             content=GLOBAL_METRICS.export_prometheus(),
             media_type="text/plain; version=0.0.4; charset=utf-8",
@@ -473,31 +536,7 @@ def create_app(
     @app.post("/v1/respond", response_model=RespondResponse)
     async def respond(body: RespondRequest, request: Request, response: Response):
         # 1. Authentication check
-        client_key = request.headers.get("X-API-Key")
-        if not client_key:
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                client_key = auth_header[7:].strip()
-
-        if active_profile.require_api_key:
-            if not required_api_key or not _constant_time_compare(client_key, required_api_key):
-                raise HTTPException(
-                    status_code=401,
-                    detail={
-                        "error": "Unauthorized",
-                        "detail": f"Deployment profile '{active_profile.name.value}' requires valid API key authentication.",
-                        "code": "UNAUTHORIZED",
-                    },
-                )
-        elif required_api_key and not _constant_time_compare(client_key, required_api_key):
-            raise HTTPException(
-                status_code=401,
-                detail={
-                    "error": "Unauthorized",
-                    "detail": "Invalid or missing X-API-Key header.",
-                    "code": "UNAUTHORIZED",
-                },
-            )
+        _verify_auth(request, operation_desc="inference request execution")
 
         # 2. Rate limiting check (Strict client IP derivation)
         peer_ip = request.client.host if request.client else "127.0.0.1"

@@ -1,24 +1,27 @@
 {
   "study_metadata": {
-    "title": "Expanded Multi-Rater Human Evaluation Study with Adjudication",
+    "title": "Simulated Multi-Annotator Calibration Study",
+    "provenance": "simulated",
+    "evidence_label": "[SIMULATED STUDY]",
+    "description": "Synthetic multi-annotator simulation generating ratings across 120 items to stress-test adjudication and Fleiss' kappa computation protocols under controlled rater noise.",
     "eval_sample_size": 120,
     "distinct_task_categories": 18,
-    "annotators": [
+    "simulated_annotators": [
       {
-        "id": "Annotator_1",
-        "role": "Domain Expert (AI/ML)"
+        "id": "Simulated_Annotator_1",
+        "role": "Simulated Domain Expert (AI/ML)"
       },
       {
-        "id": "Annotator_2",
-        "role": "Systems Engineer"
+        "id": "Simulated_Annotator_2",
+        "role": "Simulated Systems Engineer"
       },
       {
-        "id": "Annotator_3",
-        "role": "Quality Analyst"
+        "id": "Simulated_Annotator_3",
+        "role": "Simulated Quality Analyst"
       },
       {
-        "id": "Adjudicator_Lead",
-        "role": "Principal Research Scientist"
+        "id": "Simulated_Adjudicator_Lead",
+        "role": "Simulated Lead Adjudicator"
       }
     ],
     "rubric_version": "2.0.0-preregistered-5pt",

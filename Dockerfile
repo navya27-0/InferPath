@@ -13,7 +13,8 @@ ENV PYTHONUNBUFFERED=1 \
     ADAPTER_MODE=simulated \
     ENVIRONMENT=production \
     INFERPATH_VERSION=0.3.0 \
-    INFERPATH_DEPLOYMENT_MODE=local-demo
+    INFERPATH_DEPLOYMENT_MODE=local-demo \
+    INFERPATH_HOST_BIND=127.0.0.1
 
 WORKDIR /app
 
@@ -37,4 +38,4 @@ COPY app/ /app/app/
 EXPOSE 8000 8501
 
 # Default command: launch the FastAPI service
-CMD ["uvicorn", "inferpath.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "inferpath.api.main:app", "--host", "127.0.0.1", "--port", "8000"]

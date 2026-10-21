@@ -1,0 +1,55 @@
+# InferPath Local Demonstration Compose Configuration
+# Designed for instant, zero-configuration local evaluation using simulated model adapters
+# and strictly constrained loopback bindings (127.0.0.1).
+#
+# Usage:
+#   docker compose -f docker-compose.local-demo.yml up
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inferpath-api-demo
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - INFERPATH_HOST_BIND=127.0.0.1
+      - ADAPTER_MODE=simulated
+      - ENVIRONMENT=development
+      - INFERPATH_ENVIRONMENT=development
+      - INFERPATH_DEPLOYMENT_MODE=local-demo
+      - INFERPATH_VERSION=0.3.0
+      - INFERPATH_API_KEY=
+      - OPENROUTER_API_KEY=
+    command: ["uvicorn", "inferpath.api.main:app", "--host", "127.0.0.1", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inferpath-dashboard-demo
+    ports:
+      - "127.0.0.1:8501:8501"
+    environment:
+      - INFERPATH_HOST_BIND=127.0.0.1
+      - INFERPATH_DASHBOARD_BIND=127.0.0.1
+      - INFERPATH_API_URL=http://api:8000
+      - INFERPATH_API_KEY=
+      - INFERPATH_VERSION=0.3.0
+      - ADAPTER_MODE=simulated
+      - ENVIRONMENT=development
+      - INFERPATH_ENVIRONMENT=development
+      - INFERPATH_DEPLOYMENT_MODE=local-demo
+    command: ["streamlit", "run", "app/dashboard.py", "--server.port", "8501", "--server.address", "127.0.0.1"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

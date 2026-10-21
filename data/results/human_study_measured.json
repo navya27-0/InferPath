@@ -1,0 +1,29 @@
+{
+  "study_metadata": {
+    "title": "Dual-Annotator Measured Human Evaluation Study",
+    "provenance": "measured",
+    "evidence_label": "[MEASURED]",
+    "source_data_file": "data/human_ratings.csv",
+    "evaluated_items_count": 30,
+    "total_review_records": 120,
+    "reviewers": [
+      "Reviewer_1",
+      "Reviewer_2"
+    ],
+    "rubric": "5-point preregistered ordinal Likert rubric",
+    "blinding": "Double-blind randomized candidate comparison"
+  },
+  "agreement_metrics": {
+    "quadratic_weighted_cohen_kappa": 0.8594,
+    "interpretation": "Strong inter-rater agreement (kappa >= 0.80)",
+    "status": "measured"
+  },
+  "quality_distribution": {
+    "mean_score_out_of_5": 3.8417,
+    "ci_95_bootstrap": [
+      3.7167,
+      3.975
+    ],
+    "sample_size_evaluations": 120
+  }
+}

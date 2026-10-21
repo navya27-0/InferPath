@@ -26,10 +26,11 @@ python scripts/reproduce_all.py
 | **7** | Model Drift Simulation | `data/results/drift_evaluation.json` | ~0.3s |
 | **8** | Total Cost of Ownership | `data/results/tco_analysis.json` | ~0.2s |
 | **9** | Caching Trace Analysis | `data/results/caching_workload_analysis.json` | ~0.4s |
-| **10**| Expanded Human Study | `data/results/human_study_expanded.json` | ~0.5s |
-| **11**| Public Manifest Export | `data/results/fixtures/sanitized_public_manifest.json` | ~0.3s |
-| **12**| README Results Sync | Synchronized results in `README.md` | ~0.4s |
-| **Total**| **Master Reproduction** | **All 12 evaluation artifacts verified** | **~12.5s** |
+| **10**| Measured Dual-Annotator Study | `data/results/human_study_measured.json` | ~0.4s |
+| **11**| Simulated Multi-Annotator Study | `data/results/human_study_expanded.json` | ~0.5s |
+| **12**| Public Manifest Export | `data/results/fixtures/sanitized_public_manifest.json` | ~0.3s |
+| **13**| README Results Sync | Synchronized results in `README.md` | ~0.4s |
+| **Total**| **Master Reproduction** | **All 13 evaluation stages verified** | **~12.5s** |
 
 ---
 

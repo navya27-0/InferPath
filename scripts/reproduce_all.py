@@ -65,7 +65,11 @@ def main() -> int:
         ("Model Registry & Market Drift Evaluation", [py, "scripts/evaluate_model_drift.py"]),
         ("Total Cost of Ownership (TCO) Evaluation", [py, "scripts/evaluate_tco.py"]),
         ("Workload Trace Caching Evaluation", [py, "scripts/evaluate_caching_workloads.py"]),
-        ("Expanded Multi-Rater Human Study", [py, "scripts/run_expanded_human_study.py"]),
+        ("Measured Dual-Annotator Human Study", [py, "scripts/compute_empirical_human_metrics.py"]),
+        (
+            "Simulated Multi-Annotator Calibration Study",
+            [py, "scripts/run_expanded_human_study.py"],
+        ),
         ("Public Reproducibility Manifest Generator", [py, "scripts/generate_public_manifest.py"]),
         ("README Results Table Synchronization", [py, "scripts/update_readme_results.py"]),
     ]

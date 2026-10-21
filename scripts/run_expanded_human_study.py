@@ -1,8 +1,10 @@
-"""Expanded Multi-Rater Human Evaluation Study with Adjudication and Bootstrap CIs.
+"""Simulated Multi-Annotator Calibration Study with Adjudication and Bootstrap CIs.
 
-Generates a balanced, blind multi-annotator evaluation across 120 items covering
+Generates a simulated multi-annotator evaluation across 120 items covering
 all 18 task families. Simulates three independent domain annotators and a principal
-adjudicator following the preregistered 5-point Likert rubric.
+adjudicator following the preregistered 5-point Likert rubric to stress-test
+multi-rater agreement metrics, adjudication triggers, and bootstrap confidence intervals
+under controlled synthetic variance.
 
 Computes:
 - Fleiss' multi-rater kappa across all 3 annotators
@@ -207,14 +209,17 @@ def run_expanded_human_study(sample_size: int = 120, seed: int = 42) -> dict:
 
     summary = {
         "study_metadata": {
-            "title": "Expanded Multi-Rater Human Evaluation Study with Adjudication",
+            "title": "Simulated Multi-Annotator Calibration Study",
+            "provenance": "simulated",
+            "evidence_label": "[SIMULATED STUDY]",
+            "description": "Synthetic multi-annotator simulation generating ratings across 120 items to stress-test adjudication and Fleiss' kappa computation protocols under controlled rater noise.",
             "eval_sample_size": len(records),
             "distinct_task_categories": len(by_cat),
-            "annotators": [
-                {"id": "Annotator_1", "role": "Domain Expert (AI/ML)"},
-                {"id": "Annotator_2", "role": "Systems Engineer"},
-                {"id": "Annotator_3", "role": "Quality Analyst"},
-                {"id": "Adjudicator_Lead", "role": "Principal Research Scientist"},
+            "simulated_annotators": [
+                {"id": "Simulated_Annotator_1", "role": "Simulated Domain Expert (AI/ML)"},
+                {"id": "Simulated_Annotator_2", "role": "Simulated Systems Engineer"},
+                {"id": "Simulated_Annotator_3", "role": "Simulated Quality Analyst"},
+                {"id": "Simulated_Adjudicator_Lead", "role": "Simulated Lead Adjudicator"},
             ],
             "rubric_version": "2.0.0-preregistered-5pt",
             "blinded": True,
@@ -246,7 +251,7 @@ def run_expanded_human_study(sample_size: int = 120, seed: int = 42) -> dict:
     with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
-    print(f"Expanded human study saved to {OUTPUT_JSON}")
+    print(f"Simulated annotator calibration study saved to {OUTPUT_JSON} [SIMULATED STUDY]")
     print(f"  Sample Size: {len(records)} items across {len(by_cat)} categories")
     print(
         f"  System A: Mean={mean_a:.3f} (95% CI: [{ci_low_a:.3f}, {ci_high_a:.3f}]), Fleiss={fleiss_a:.3f}"

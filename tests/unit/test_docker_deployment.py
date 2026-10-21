@@ -29,9 +29,15 @@ def test_dockerfile_syntax_and_security_configuration():
     assert any("8000" in line for line in lines), "Dockerfile must expose port 8000 (API)"
     assert any("8501" in line for line in lines), "Dockerfile must expose port 8501 (Dashboard)"
 
-    # Safe default deployment mode
+    # Safe default deployment mode and loopback host binding
     assert any("INFERPATH_DEPLOYMENT_MODE=local-demo" in line for line in lines), (
         "Dockerfile must default to local-demo mode"
+    )
+    assert any("INFERPATH_HOST_BIND=127.0.0.1" in line for line in lines), (
+        "Dockerfile must default to loopback host bind (127.0.0.1)"
+    )
+    assert any("127.0.0.1" in line for line in lines if "CMD" in line), (
+        "Dockerfile default command must bind to 127.0.0.1"
     )
 
 
@@ -62,12 +68,10 @@ def test_docker_compose_host_binding_localhost_default():
 
     # Verify healthchecks are defined
     assert "healthcheck" in services["api"]
-    assert services["api"]["healthcheck"]["test"] == [
-        "CMD",
-        "curl",
-        "-f",
-        "http://localhost:8000/health",
-    ]
+    assert services["api"]["healthcheck"]["test"] in (
+        ["CMD", "curl", "-f", "http://localhost:8000/health"],
+        ["CMD", "curl", "-f", "http://localhost:8000/health/live"],
+    )
 
 
 def test_api_deployment_mode_protected_enforces_auth():
@@ -120,3 +124,32 @@ def test_api_deployment_mode_local_demo_allows_unauthenticated():
     res = client.post("/v1/respond", json={"prompt": "Calculate 15 * 4"})
     assert res.status_code == 200
     assert res.json()["route"] == "deterministic_a"
+
+
+def test_docker_compose_local_demo_configuration():
+    """docker-compose.local-demo.yml must be self-starting with 127.0.0.1 binding and simulated adapters."""
+    compose_path = Path("docker-compose.local-demo.yml")
+    assert compose_path.exists(), "docker-compose.local-demo.yml must exist"
+
+    with open(compose_path, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+
+    assert "services" in cfg
+    services = cfg["services"]
+
+    # API verification
+    assert "api" in services
+    api_ports = services["api"]["ports"]
+    assert any("127.0.0.1:8000" in p for p in api_ports)
+    api_env = services["api"]["environment"]
+    assert "INFERPATH_DEPLOYMENT_MODE=local-demo" in api_env
+    assert "ADAPTER_MODE=simulated" in api_env
+    assert "INFERPATH_HOST_BIND=127.0.0.1" in api_env
+
+    # Dashboard verification
+    assert "dashboard" in services
+    dash_ports = services["dashboard"]["ports"]
+    assert any("127.0.0.1:8501" in p for p in dash_ports)
+    dash_env = services["dashboard"]["environment"]
+    assert "INFERPATH_DEPLOYMENT_MODE=local-demo" in dash_env
+    assert "INFERPATH_HOST_BIND=127.0.0.1" in dash_env

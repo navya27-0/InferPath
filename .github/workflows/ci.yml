@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   test-and-lint:
-    name: Lint & Hermetic Test Suite
+    name: Lint, Test Suite & Docker Security Verification
     runs-on: ubuntu-latest
 
     steps:
@@ -47,3 +47,30 @@ jobs:
       - name: Verify README results synchronization
         run: |
           python scripts/update_readme_results.py --check
+
+      - name: Validate Docker Compose configurations
+        run: |
+          docker compose config
+          docker compose -f docker-compose.local-demo.yml config
+
+      - name: Build Docker image
+        run: |
+          docker build -t inferpath:test .
+
+      - name: Run Docker container security smoke test
+        run: |
+          # 1. Start container with loopback default and verify minimal public liveness probe succeeds
+          docker run --rm -d --name inferpath-smoke -p 127.0.0.1:8000:8000 inferpath:test
+          # Wait up to 15s for liveness
+          timeout 15 bash -c 'until curl -sf http://127.0.0.1:8000/health/live; do sleep 1; done'
+          curl -sf http://127.0.0.1:8000/health/live
+          docker stop inferpath-smoke
+
+          # 2. Verify that public binding without API key halts startup (fail-closed security)
+          echo "Verifying fail-closed protection when attempting public bind without API key..."
+          if docker run --rm -e INFERPATH_HOST_BIND=0.0.0.0 -e INFERPATH_DEPLOYMENT_MODE=local-demo inferpath:test uvicorn inferpath.api.main:app --host 0.0.0.0 --port 8000; then
+            echo "Security violation: Container should have failed closed on public bind without API key!"
+            exit 1
+          else
+            echo "Expected fail-closed behavior confirmed: container halted startup."
+          fi

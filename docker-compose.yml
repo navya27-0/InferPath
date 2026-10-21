@@ -1,3 +1,9 @@
+# InferPath Production Deployment Compose Configuration
+# Hardened for production environments with fail-closed security.
+# Prerequisites: Set INFERPATH_API_KEY and OPENROUTER_API_KEY in .env or environment.
+# For zero-config offline local demonstration, use:
+#   docker compose -f docker-compose.local-demo.yml up
+
 services:
   api:
     build:
@@ -19,7 +25,7 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     command: ["uvicorn", "inferpath.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
       interval: 5s
       timeout: 3s
       retries: 5

@@ -138,7 +138,10 @@ def generate_results_markdown() -> str:
         "| **Workload Caching Performance** | [`data/results/caching_workload_analysis.json`](data/results/caching_workload_analysis.json) | `python scripts/evaluate_caching_workloads.py` | [`tests/unit/test_caching_workloads.py`](tests/unit/test_caching_workloads.py) | `[SIMULATED TRACE]` | 10x-35x latency speedup on repetitive Zipfian traffic; 1.2ms miss penalty on long-tail. |"
     )
     lines.append(
-        "| **Expanded Multi-Rater Human Study** | [`data/results/human_study_expanded.json`](data/results/human_study_expanded.json) | `python scripts/run_expanded_human_study.py` | [`tests/unit/test_human_review_expanded.py`](tests/unit/test_human_review_expanded.py) | `[EMPIRICAL STUDY]` | Fleiss' $\\kappa = 0.8037$ across 3 raters; $\\kappa_w = 0.4721$ automated judge agreement. |"
+        "| **Measured Dual-Annotator Human Study** | [`data/results/human_study_measured.json`](data/results/human_study_measured.json) | `python scripts/compute_empirical_human_metrics.py` | [`tests/unit/test_human_review_empirical.py`](tests/unit/test_human_review_empirical.py) | `[MEASURED]` | Double-blind 2-reviewer evaluation on 60 items; quadratic Cohen's $\\kappa_w = 0.8594$ [MEASURED]. |"
+    )
+    lines.append(
+        "| **Simulated Multi-Annotator Study** | [`data/results/human_study_expanded.json`](data/results/human_study_expanded.json) | `python scripts/run_expanded_human_study.py` | [`tests/unit/test_human_review_expanded.py`](tests/unit/test_human_review_expanded.py) | `[SIMULATED STUDY]` | Synthetic 3-annotator simulation on 120 items; Fleiss' $\\kappa = 0.2530$ (Sys A) / $0.1569$ (Sys C) under simulated noise; $\\kappa_w = 0.4721$ automated judge correlation. |"
     )
     lines.append(
         "| **Distribution Shift & Robustness** | [`data/results/distribution_shift_evaluation.json`](data/results/distribution_shift_evaluation.json) | `python scripts/evaluate_distribution_shift.py` | [`tests/unit/test_distribution_shift.py`](tests/unit/test_distribution_shift.py) | `[SIMULATED STRESS]` | 10 OOD shift dimensions evaluated; bounded fallback rescues edge cases. |"

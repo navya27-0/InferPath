@@ -5,11 +5,21 @@ from __future__ import annotations
 import contextlib
 import os
 import secrets
+import string
 import time
 from collections.abc import Generator
 from typing import Any
 
 from inferpath.telemetry.structured_logging import current_span_id, current_trace_id
+
+_HEX_CHARS = frozenset(string.hexdigits.lower() + string.hexdigits.upper())
+
+
+def _is_valid_hex_field(val: str, expected_len: int) -> bool:
+    """Verifies that a field has exact expected length and consists solely of hexadecimal characters."""
+    if len(val) != expected_len:
+        return False
+    return all(c in _HEX_CHARS for c in val)
 
 
 def generate_trace_id() -> str:
@@ -99,16 +109,49 @@ class Tracer:
         self._max_history = 10_000
 
     def parse_w3c_traceparent(self, header_value: str | None) -> tuple[str, str] | None:
-        """
-        Parses W3C traceparent header: 00-{trace_id}-{span_id}-{flags}.
-        Returns (trace_id, parent_span_id) if valid, or None if invalid.
+        """Parses and validates W3C traceparent header: version-trace_id-parent_id-trace_flags.
+
+        Strict W3C TraceContext specification compliance:
+        - Must be delimited by hyphens.
+        - Version '00' must have exactly 4 fields (no extra fields allowed).
+        - Version 'ff' is forbidden.
+        - trace_id must be exactly 32 hex characters and MUST NOT be all zeros.
+        - parent_id (span_id) must be exactly 16 hex characters and MUST NOT be all zeros.
+        - trace_flags must be exactly 2 hex characters.
+
+        Returns (trace_id, parent_span_id) if fully valid, or None if malformed/unsupported.
         """
         if not header_value:
             return None
         parts = header_value.strip().split("-")
-        if len(parts) >= 4 and parts[0] == "00" and len(parts[1]) == 32 and len(parts[2]) == 16:
-            return parts[1], parts[2]
-        return None
+        if len(parts) < 4:
+            return None
+
+        version = parts[0]
+        if not _is_valid_hex_field(version, 2):
+            return None
+        if version.lower() == "ff":
+            return None
+        if version == "00" and len(parts) != 4:
+            return None
+
+        trace_id = parts[1]
+        parent_id = parts[2]
+        trace_flags = parts[3]
+
+        if not _is_valid_hex_field(trace_id, 32):
+            return None
+        if not _is_valid_hex_field(parent_id, 16):
+            return None
+        if not _is_valid_hex_field(trace_flags, 2):
+            return None
+
+        if set(trace_id) == {"0"}:
+            return None
+        if set(parent_id) == {"0"}:
+            return None
+
+        return trace_id.lower(), parent_id.lower()
 
     def start_span(
         self,
