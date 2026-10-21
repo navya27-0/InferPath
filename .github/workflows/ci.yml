@@ -73,6 +73,8 @@ jobs:
 
           # 3. Start authenticated container on 0.0.0.0 and verify liveness probe succeeds
           docker run --rm -d --name inferpath-smoke -p 127.0.0.1:8000:8000 \
+            -e ENVIRONMENT=staging \
+            -e INFERPATH_DEPLOYMENT_MODE=staging \
             -e INFERPATH_HOST_BIND=0.0.0.0 \
             -e INFERPATH_API_KEY=test_smoke_api_key_2026 \
             inferpath:test \
