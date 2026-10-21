@@ -58,7 +58,10 @@ def test_pipeline_logs_and_db_zero_secret_leakage(tmp_path):
     pricing = PricingTable(
         effective_date="2026-10-01",
         source="Test",
-        rates_per_1m={"google/gemini-2.5-flash": {"prompt": 0.075, "completion": 0.30}},
+        rates_per_1m={
+            "google/gemini-2.5-flash": {"prompt": 0.075, "completion": 0.30},
+            "anthropic/claude-3.7-sonnet": {"prompt": 3.0, "completion": 15.0},
+        },
     )
 
     logger = ExperimentLogger(log_path=log_path)

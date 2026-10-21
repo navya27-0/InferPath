@@ -27,6 +27,7 @@ from inferpath.handlers.unit_converter import UnitConverter
 from inferpath.models.domain import HandlerOutput, RoutingDecision, UserRequest
 from inferpath.models.enums import PrivacyClass, RouteTier
 from inferpath.router.analyzer import RequestAnalysis, RequestAnalyzer, contains_sensitive_patterns
+from inferpath.security.budget import UnknownModelPricingError
 from inferpath.security.hashing import hash_prompt
 from inferpath.security.privacy import PrivacyPolicyEnforcer, PrivacyViolationError
 from inferpath.telemetry.experiment_logger import ExperimentLogger
@@ -409,12 +410,16 @@ class ConstraintAwareRouter(BaseRouter):
             "large_model",
             "anthropic/claude-3.7-sonnet",
         )
-        rates_c = self.pricing_table.rates_per_1m.get(
-            small_model_id, {"prompt": 0.075, "completion": 0.30}
-        )
-        rates_d = self.pricing_table.rates_per_1m.get(
-            large_model_id, {"prompt": 3.0, "completion": 15.0}
-        )
+        if small_model_id not in self.pricing_table.rates_per_1m:
+            raise UnknownModelPricingError(
+                f"Constraint routing failed: model '{small_model_id}' is unpriced in active pricing table ({self.pricing_table.effective_date})."
+            )
+        if large_model_id not in self.pricing_table.rates_per_1m:
+            raise UnknownModelPricingError(
+                f"Constraint routing failed: model '{large_model_id}' is unpriced in active pricing table ({self.pricing_table.effective_date})."
+            )
+        rates_c = self.pricing_table.rates_per_1m[small_model_id]
+        rates_d = self.pricing_table.rates_per_1m[large_model_id]
 
         cost_c = (estimated_prompt_tokens / 1e6) * rates_c["prompt"] + (
             estimated_completion_tokens / 1e6
@@ -1067,12 +1072,16 @@ class RandomConstrainedRouter(BaseRouter):
             "large_model",
             "anthropic/claude-3.7-sonnet",
         )
-        rates_c = self.pricing_table.rates_per_1m.get(
-            small_model_id, {"prompt": 0.075, "completion": 0.30}
-        )
-        rates_d = self.pricing_table.rates_per_1m.get(
-            large_model_id, {"prompt": 3.0, "completion": 15.0}
-        )
+        if small_model_id not in self.pricing_table.rates_per_1m:
+            raise UnknownModelPricingError(
+                f"Learned routing failed: model '{small_model_id}' is unpriced in active pricing table ({self.pricing_table.effective_date})."
+            )
+        if large_model_id not in self.pricing_table.rates_per_1m:
+            raise UnknownModelPricingError(
+                f"Learned routing failed: model '{large_model_id}' is unpriced in active pricing table ({self.pricing_table.effective_date})."
+            )
+        rates_c = self.pricing_table.rates_per_1m[small_model_id]
+        rates_d = self.pricing_table.rates_per_1m[large_model_id]
 
         cost_c = (prompt_tokens / 1e6) * rates_c["prompt"] + (completion_tokens / 1e6) * rates_c[
             "completion"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from inferpath.handlers.mock_adapter import MockLargeModel, MockSmallModel, ModelAdapter
-from inferpath.handlers.openrouter_adapter import OpenRouterAdapter
+from inferpath.handlers.openrouter_adapter import OpenRouterAdapter, UnknownModelPricingError
 
 if TYPE_CHECKING:
     from inferpath.config.settings import PricingTable, Settings
@@ -74,11 +74,14 @@ class AdapterFactory:
     @staticmethod
     def build_mock_small(settings: Settings, pricing_table: PricingTable) -> MockSmallModel:
         """Constructs deterministic MockSmallModel with current pricing schedule."""
-        rates = pricing_table.rates_per_1m.get(
-            settings.openrouter.small_model, {"prompt": 0.075, "completion": 0.30}
-        )
+        model_id = settings.openrouter.small_model
+        if model_id not in pricing_table.rates_per_1m:
+            raise UnknownModelPricingError(
+                f"Cannot build mock small adapter: model '{model_id}' is unpriced in active pricing table ({pricing_table.effective_date})."
+            )
+        rates = pricing_table.rates_per_1m[model_id]
         return MockSmallModel(
-            model_id=settings.openrouter.small_model,
+            model_id=model_id,
             prompt_price_per_1m=rates["prompt"],
             completion_price_per_1m=rates["completion"],
             simulated_base_latency_ms=120.0,
@@ -105,11 +108,14 @@ class AdapterFactory:
     @staticmethod
     def build_mock_large(settings: Settings, pricing_table: PricingTable) -> MockLargeModel:
         """Constructs deterministic MockLargeModel with current pricing schedule."""
-        rates = pricing_table.rates_per_1m.get(
-            settings.openrouter.large_model, {"prompt": 3.0, "completion": 15.0}
-        )
+        model_id = settings.openrouter.large_model
+        if model_id not in pricing_table.rates_per_1m:
+            raise UnknownModelPricingError(
+                f"Cannot build mock large adapter: model '{model_id}' is unpriced in active pricing table ({pricing_table.effective_date})."
+            )
+        rates = pricing_table.rates_per_1m[model_id]
         return MockLargeModel(
-            model_id=settings.openrouter.large_model,
+            model_id=model_id,
             prompt_price_per_1m=rates["prompt"],
             completion_price_per_1m=rates["completion"],
             simulated_base_latency_ms=450.0,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,24 @@ class PrivacyViolationError(PermissionError):
 
     def __str__(self) -> str:
         return self.message
+
+
+def parse_classification_confidence(raw_val: Any) -> float | None:
+    """Parses and validates caller-supplied classification confidence.
+
+    Returns a finite float between 0.0 and 1.0, or None if invalid/unparseable/non-finite.
+    """
+    if raw_val is None:
+        return None
+    try:
+        val = float(raw_val)
+        if math.isnan(val) or math.isinf(val):
+            return None
+        if val < 0.0 or val > 1.0:
+            return None
+        return val
+    except (TypeError, ValueError):
+        return None
 
 
 class PrivacyPolicyEnforcer:
@@ -173,9 +192,17 @@ class PrivacyPolicyEnforcer:
         has_sensitive_pattern = contains_sensitive_patterns(combined)
 
         # Explicit policy boundary: treat uncertain classification as defensive local-only
+        raw_confidence = request.metadata.get("classification_confidence")
+        if raw_confidence is not None:
+            parsed_conf = parse_classification_confidence(raw_confidence)
+            # If invalid (non-numeric, NaN, out of bounds) or below 0.7 threshold, treat as uncertain
+            is_confidence_uncertain = (parsed_conf is None) or (parsed_conf < 0.7)
+        else:
+            is_confidence_uncertain = False
+
         is_uncertain = bool(
             request.metadata.get("uncertain_classification", False)
-            or (float(request.metadata.get("classification_confidence", 1.0)) < 0.7)
+            or is_confidence_uncertain
             or request.metadata.get("privacy_uncertain", False)
         )
         if is_uncertain:

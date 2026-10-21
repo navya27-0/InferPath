@@ -639,3 +639,151 @@ def test_provider_failure_paths_release_budget_reservation():
         adapter_500.generate("500 test")
     assert budget.remaining_budget == initial_remaining
     assert budget.total_spent_usd == 0.0
+
+
+# =============================================================================
+# 9. P2: Malformed Privacy Metadata & Classification Confidence Validation
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    "bad_confidence",
+    [
+        "high",
+        "low",
+        {"confidence": 0.99},
+        [0.85],
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        -0.5,
+        1.5,
+        "",
+    ],
+)
+def test_malformed_privacy_metadata_classification_confidence(bad_confidence):
+    """Malformed or out-of-range classification_confidence does not crash and enforces local-only."""
+    enforcer = PrivacyPolicyEnforcer()
+    req = UserRequest(
+        request_id="req_bad_conf",
+        prompt="Calculate 2 + 2",
+        privacy_class=PrivacyClass.PUBLIC,
+        metadata={"classification_confidence": bad_confidence},
+    )
+
+    decision = enforcer.evaluate_privacy(req)
+    assert decision.allow_local_processing is True
+    assert decision.allow_external_transmission is False
+    assert decision.allow_cache is False
+    assert "uncertain" in decision.reason.lower()
+
+
+def test_valid_privacy_classification_confidence_thresholds():
+    """Valid finite confidence >= 0.7 allows normal routing; < 0.7 triggers defensive boundary."""
+    enforcer = PrivacyPolicyEnforcer()
+
+    # Below 0.7 threshold -> defensive local-only
+    req_low = UserRequest(
+        request_id="req_low_conf",
+        prompt="Calculate 2 + 2",
+        privacy_class=PrivacyClass.PUBLIC,
+        metadata={"classification_confidence": 0.65},
+    )
+    dec_low = enforcer.evaluate_privacy(req_low)
+    assert dec_low.allow_external_transmission is False
+    assert dec_low.allow_cache is False
+
+    # Above 0.7 threshold -> normal public transmission allowed
+    req_high = UserRequest(
+        request_id="req_high_conf",
+        prompt="Calculate 2 + 2",
+        privacy_class=PrivacyClass.PUBLIC,
+        metadata={"classification_confidence": 0.85},
+    )
+    dec_high = enforcer.evaluate_privacy(req_high)
+    assert dec_high.allow_external_transmission is True
+
+
+# =============================================================================
+# 10. P2: Mock Adapters Enforce Fail-Closed Pricing
+# =============================================================================
+
+
+def test_mock_adapters_fail_closed_on_unpriced_models():
+    """AdapterFactory.build_mock_small and build_mock_large raise UnknownModelPricingError on unpriced models."""
+    from inferpath.config.settings import Settings
+    from inferpath.handlers.factory import AdapterFactory
+
+    table = PricingTable(
+        effective_date="2026-10-01",
+        source="test",
+        rates_per_1m={"google/gemini-2.5-flash": {"prompt": 0.075, "completion": 0.30}},
+    )
+
+    # 1. Small model unpriced
+    settings_small_unpriced = Settings()
+    settings_small_unpriced.openrouter.small_model = "unregistered/unknown-small:v1"
+
+    with pytest.raises(UnknownModelPricingError, match="is unpriced in active pricing table"):
+        AdapterFactory.build_mock_small(settings_small_unpriced, table)
+
+    # 2. Large model unpriced
+    settings_large_unpriced = Settings()
+    settings_large_unpriced.openrouter.large_model = "unregistered/unknown-large:v1"
+
+    with pytest.raises(UnknownModelPricingError, match="is unpriced in active pricing table"):
+        AdapterFactory.build_mock_large(settings_large_unpriced, table)
+
+
+def test_constraint_router_fails_closed_on_unpriced_models():
+    """ConstraintAwareRouter raises UnknownModelPricingError when requested models are not in pricing table."""
+    from inferpath.config.settings import Settings
+    from inferpath.router.strategies import ConstraintAwareRouter
+
+    table = PricingTable(
+        effective_date="2026-10-01",
+        source="test",
+        rates_per_1m={"google/gemini-2.5-flash": {"prompt": 0.075, "completion": 0.30}},
+    )
+    settings = Settings()
+    settings.openrouter.large_model = "unregistered/unknown-large:v1"
+
+    router = ConstraintAwareRouter(pricing_table=table)
+    router.settings = settings
+    req = UserRequest(request_id="req_unpriced_test", prompt="Analyze market trends")
+
+    with pytest.raises(UnknownModelPricingError, match="is unpriced in active pricing table"):
+        router.route(req)
+
+
+# =============================================================================
+# 11. Checklist: API Key Masking and Redaction in Error Responses
+# =============================================================================
+
+
+def test_api_key_not_leaked_in_error_responses(monkeypatch):
+    """API responses never leak the configured secret API key in bodies or headers."""
+    secret_key = "sk-live-supersecretproductionkey99999"
+    monkeypatch.setenv("INFERPATH_API_KEY", secret_key)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-mock-production-key-11111")
+    monkeypatch.setenv("INFERPATH_HOST_BIND", "127.0.0.1")
+    monkeypatch.setenv("INFERPATH_DEPLOYMENT_MODE", "production")
+
+    app = create_app(api_key=secret_key, deployment_mode="production")
+    client = TestClient(app)
+
+    # 1. Missing auth
+    res_no_auth = client.post("/v1/respond", json={"prompt": "Ping"})
+    assert res_no_auth.status_code == 401
+    assert secret_key not in res_no_auth.text
+    assert secret_key not in str(res_no_auth.headers)
+
+    # 2. Invalid auth
+    res_bad_auth = client.post(
+        "/v1/respond",
+        json={"prompt": "Ping"},
+        headers={"X-API-Key": "wrong-key-12345"},
+    )
+    assert res_bad_auth.status_code == 401
+    assert secret_key not in res_bad_auth.text
+    assert "wrong-key-12345" not in res_bad_auth.text
