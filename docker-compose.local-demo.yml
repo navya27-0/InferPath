@@ -22,7 +22,7 @@ services:
       - INFERPATH_VERSION=0.3.0
       - INFERPATH_API_KEY=
       - OPENROUTER_API_KEY=
-    command: ["uvicorn", "inferpath.api.main:app", "--host", "127.0.0.1", "--port", "8000"]
+    command: ["uvicorn", "inferpath.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
       interval: 5s
@@ -48,7 +48,7 @@ services:
       - ENVIRONMENT=development
       - INFERPATH_ENVIRONMENT=development
       - INFERPATH_DEPLOYMENT_MODE=local-demo
-    command: ["streamlit", "run", "app/dashboard.py", "--server.port", "8501", "--server.address", "127.0.0.1"]
+    command: ["streamlit", "run", "app/dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
     depends_on:
       api:
         condition: service_healthy

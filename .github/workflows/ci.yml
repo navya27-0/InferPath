@@ -59,8 +59,8 @@ jobs:
 
       - name: Run Docker container security smoke test
         run: |
-          # 1. Start container with loopback default and verify minimal public liveness probe succeeds
-          docker run --rm -d --name inferpath-smoke -p 127.0.0.1:8000:8000 inferpath:test
+          # 1. Start container with loopback default on host network and verify minimal public liveness probe succeeds
+          docker run --rm -d --network host --name inferpath-smoke inferpath:test
           # Wait up to 15s for liveness
           timeout 15 bash -c 'until curl -sf http://127.0.0.1:8000/health/live; do sleep 1; done'
           curl -sf http://127.0.0.1:8000/health/live
