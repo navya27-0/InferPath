@@ -458,3 +458,245 @@ def test_production_profile_enforces_redis_requirement(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test-prod-key")
     with pytest.raises(RuntimeError, match="Failed to initialize distributed rate limiter"):
         create_app(deployment_mode="production")
+
+
+# =============================================================================
+# Security & Concurrency Hardening: Redis Timestamp Collisions, Extra Sanitization, URL Masking
+# =============================================================================
+
+
+class InMemoryFakeRedis:
+    """In-memory Redis fake with sorted set support for rate limiter testing."""
+
+    def __init__(self):
+        self._zsets = {}
+
+    def zremrangebyscore(self, key: str, min_score: float | str, max_score: float | str) -> int:
+        z = self._zsets.get(key, {})
+        max_val = float(max_score)
+        to_del = [m for m, s in z.items() if s <= max_val]
+        for m in to_del:
+            del z[m]
+        return len(to_del)
+
+    def zcard(self, key: str) -> int:
+        return len(self._zsets.get(key, {}))
+
+    def zadd(self, key: str, mapping: dict[str, float]) -> int:
+        if key not in self._zsets:
+            self._zsets[key] = {}
+        added = 0
+        for m, s in mapping.items():
+            if m not in self._zsets[key]:
+                added += 1
+            self._zsets[key][m] = s
+        return added
+
+    def expire(self, key: str, seconds: int) -> bool:
+        return True
+
+    def eval(
+        self,
+        script: str,
+        numkeys: int,
+        key: str,
+        now: float,
+        cutoff: float,
+        limit: int,
+        ttl: int,
+        member: str,
+    ) -> int:
+        self.zremrangebyscore(key, "-inf", cutoff)
+        if self.zcard(key) < limit:
+            self.zadd(key, {member: float(now)})
+            return 1
+        return 0
+
+    def pipeline(self, transaction: bool = True):
+        return FakeRedisPipeline(self)
+
+
+class FakeRedisPipeline:
+    def __init__(self, client: InMemoryFakeRedis):
+        self.client = client
+        self.calls = []
+
+    def zremrangebyscore(self, key, min_s, max_s):
+        self.calls.append(("zrem", key, min_s, max_s))
+        return self
+
+    def zcard(self, key):
+        self.calls.append(("zcard", key))
+        return self
+
+    def zadd(self, key, mapping):
+        self.calls.append(("zadd", key, mapping))
+        return self
+
+    def expire(self, key, ttl):
+        self.calls.append(("expire", key, ttl))
+        return self
+
+    def execute(self):
+        results = []
+        for call in self.calls:
+            if call[0] == "zrem":
+                results.append(self.client.zremrangebyscore(call[1], call[2], call[3]))
+            elif call[0] == "zcard":
+                results.append(self.client.zcard(call[1]))
+            elif call[0] == "zadd":
+                results.append(self.client.zadd(call[1], call[2]))
+            elif call[0] == "expire":
+                results.append(self.client.expire(call[1], call[2]))
+        self.calls = []
+        return results
+
+
+def test_redis_rate_limiter_identical_timestamp_member_collision(monkeypatch):
+    """Verify Redis rate limiter generates unique sorted-set members under identical timestamps."""
+    import time
+
+    from inferpath.services.rate_limiter import DistributedRateLimiter
+
+    fake_redis = InMemoryFakeRedis()
+    limiter = DistributedRateLimiter(redis_client=fake_redis, requests_per_minute=2)
+
+    # Freeze time so all requests arrive at identical float timestamp
+    frozen_time = 1700000000.0
+    monkeypatch.setattr(time, "time", lambda: frozen_time)
+
+    # Request 1 & 2 allowed
+    assert limiter.is_allowed("client_lua") is True
+    assert limiter.is_allowed("client_lua") is True
+
+    # Card count in redis must be 2, NOT 1
+    assert fake_redis.zcard("inferpath:ratelimit:client_lua") == 2
+
+    # Request 3 must be blocked under identical timestamp
+    assert limiter.is_allowed("client_lua") is False
+
+    # Now verify fallback pipeline path (without eval)
+    fake_redis_pipe = InMemoryFakeRedis()
+    # Remove eval to trigger pipeline fallback path
+    fake_redis_pipe.eval = None
+    limiter_pipe = DistributedRateLimiter(redis_client=fake_redis_pipe, requests_per_minute=2)
+
+    assert limiter_pipe.is_allowed("client_pipe") is True
+    assert limiter_pipe.is_allowed("client_pipe") is True
+    assert fake_redis_pipe.zcard("inferpath:ratelimit:client_pipe") == 2
+    assert limiter_pipe.is_allowed("client_pipe") is False
+
+
+def test_redis_rate_limiter_concurrency_stress(monkeypatch):
+    """Verify concurrent requests with colliding timestamps strictly enforce rate quotas."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from inferpath.services.rate_limiter import DistributedRateLimiter
+
+    fake_redis = InMemoryFakeRedis()
+    limiter = DistributedRateLimiter(redis_client=fake_redis, requests_per_minute=5)
+    monkeypatch.setattr(time, "time", lambda: 1700000000.0)
+
+    results = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(limiter.is_allowed, "concurrent_client") for _ in range(20)]
+        for f in futures:
+            results.append(f.result())
+
+    # Exactly 5 requests allowed, 15 rejected
+    assert results.count(True) == 5
+    assert results.count(False) == 15
+    assert fake_redis.zcard("inferpath:ratelimit:concurrent_client") == 5
+
+
+def test_structured_logging_recursive_sanitization():
+    """Verify structured logger recursively scrubs API keys and sensitive tokens in extra fields."""
+    import json
+    import logging
+
+    from inferpath.telemetry.structured_logging import StructuredJsonFormatter
+
+    formatter = StructuredJsonFormatter()
+    record = logging.LogRecord(
+        name="test_logger",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=10,
+        msg="Sample log message with key sk-or-v1-supersecretkey1234567890",
+        args=(),
+        exc_info=None,
+    )
+    # Deeply nested extra with sensitive tokens in dicts, lists, tuples, and keys
+    record.auth_payload = {
+        "nested": {
+            "token": "sk-123456789012345678",
+            "bearer": "Bearer topsecrettokenvalue123456",
+        },
+        "credentials_list": [
+            "sk-or-v1-nestedinlist1234567890",
+            {"key": "secret: mysecrettoken123456"},
+        ],
+        "credentials_tuple": ("sk-or-v1-inatuple1234567890",),
+    }
+
+    formatted = formatter.format(record)
+    parsed = json.loads(formatted)
+
+    # Assert no sensitive raw keys exist anywhere in JSON string
+    assert "sk-or-v1-supersecretkey1234567890" not in formatted
+    assert "sk-123456789012345678" not in formatted
+    assert "topsecrettokenvalue123456" not in formatted
+    assert "sk-or-v1-nestedinlist1234567890" not in formatted
+    assert "mysecrettoken123456" not in formatted
+    assert "sk-or-v1-inatuple1234567890" not in formatted
+
+    # Assert redaction token is present in nested structures
+    assert parsed["extra"]["auth_payload"]["nested"]["token"] == "[REDACTED_API_KEY]"
+    assert parsed["extra"]["auth_payload"]["credentials_list"][0] == "[REDACTED_API_KEY]"
+    assert parsed["extra"]["auth_payload"]["credentials_tuple"][0] == "[REDACTED_API_KEY]"
+
+
+def test_redis_connection_credential_masking(monkeypatch, caplog):
+    """Verify Redis connection errors and logs mask embedded passwords in redis_url."""
+    import logging
+
+    from inferpath.api.main import _sanitize_redis_url, create_app
+
+    # 1. URL sanitizer unit behavior
+    assert (
+        _sanitize_redis_url("redis://:supersecretpass@localhost:6379/0")
+        == "redis://:***@localhost:6379/0"
+    )
+    assert (
+        _sanitize_redis_url("redis://admin:supersecretpass@host:6379/1")
+        == "redis://admin:***@host:6379/1"
+    )
+    assert (
+        _sanitize_redis_url("rediss://myuser:secret12345@cache.internal:6380")
+        == "rediss://myuser:***@cache.internal:6380"
+    )
+    assert _sanitize_redis_url("redis://localhost:6379/0") == "redis://localhost:6379/0"
+
+    # 2. Exception message masking when fail_closed or require_redis is True
+    monkeypatch.setenv(
+        "INFERPATH_REDIS_URL", "redis://:very_secret_redis_password_999@127.0.0.1:6379/0"
+    )
+    monkeypatch.setenv("INFERPATH_REQUIRE_REDIS", "true")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        create_app(deployment_mode="local-demo")
+
+    exc_msg = str(exc_info.value)
+    assert "very_secret_redis_password_999" not in exc_msg
+    assert "redis://:***@127.0.0.1:6379/0" in exc_msg
+
+    # 3. Log warning masking when non-failing mode degrades to in-memory
+    monkeypatch.setenv("INFERPATH_REQUIRE_REDIS", "false")
+    monkeypatch.setenv("INFERPATH_RATE_LIMIT_FAIL_CLOSED", "false")
+    with caplog.at_level(logging.WARNING):
+        app = create_app(deployment_mode="local-demo")
+        assert app.state.rate_limiter_status == "in_memory (degraded_fallback)"
+
+    log_text = caplog.text
+    assert "very_secret_redis_password_999" not in log_text

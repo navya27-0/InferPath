@@ -23,6 +23,20 @@ current_request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 )
 
 
+def _sanitize_extra_value(val: Any) -> Any:
+    """Recursively scrub API keys and sensitive credentials from log extra fields."""
+    if isinstance(val, str):
+        return scrub_api_keys(val)
+    if isinstance(val, dict):
+        return {
+            (scrub_api_keys(k) if isinstance(k, str) else k): _sanitize_extra_value(v)
+            for k, v in val.items()
+        }
+    if isinstance(val, (list, tuple, set)):
+        return [_sanitize_extra_value(v) for v in val]
+    return val
+
+
 class StructuredJsonFormatter(logging.Formatter):
     """
     Formats standard Python logging records as machine-parseable JSON lines.
@@ -91,14 +105,22 @@ class StructuredJsonFormatter(logging.Formatter):
             "process",
             "message",
         }
-        extras = {k: v for k, v in record.__dict__.items() if k not in reserved}
+        extras = {
+            (scrub_api_keys(k) if isinstance(k, str) else k): _sanitize_extra_value(v)
+            for k, v in record.__dict__.items()
+            if k not in reserved
+        }
         if extras:
             log_entry["extra"] = extras
 
         if record.exc_info:
             log_entry["exception"] = scrub_api_keys(self.formatException(record.exc_info))
 
-        return json.dumps(log_entry, ensure_ascii=False)
+        return json.dumps(
+            log_entry,
+            ensure_ascii=False,
+            default=lambda o: scrub_api_keys(str(o)),
+        )
 
 
 def configure_structured_logging(

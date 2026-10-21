@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import math
 import os
+import re
 import sys
 import uuid
 from typing import Any
@@ -38,6 +39,13 @@ from inferpath.services.rate_limiter import (
 from inferpath.telemetry.metrics import GLOBAL_METRICS
 from inferpath.telemetry.structured_logging import configure_structured_logging, current_request_id
 from inferpath.telemetry.tracing import GLOBAL_TRACER
+
+
+def _sanitize_redis_url(url: str) -> str:
+    """Masks authentication credentials (passwords) in Redis connection URLs."""
+    masked = re.sub(r"://([^:]*):([^@]+)@", r"://\1:***@", url)
+    return scrub_api_keys(masked)
+
 
 MAX_PROMPT_CHARS = 32_768
 
@@ -203,15 +211,17 @@ def create_app(
                 )
                 rate_limiter_status = "distributed"
             except Exception as e:
+                sanitized_url = _sanitize_redis_url(redis_url)
+                sanitized_err = scrub_api_keys(str(e))
                 if require_redis or rate_limit_fail_closed:
                     raise RuntimeError(
-                        f"Failed to initialize distributed rate limiter with redis_url={redis_url}: {e}"
+                        f"Failed to initialize distributed rate limiter with redis_url={sanitized_url}: {sanitized_err}"
                     ) from e
                 import logging
 
                 logging.getLogger("inferpath.api").warning(
                     "Redis distributed rate limiter initialization failed (%s). Falling back to in-memory RateLimiter.",
-                    e,
+                    sanitized_err,
                 )
                 limiter = RateLimiter(requests_per_minute=active_profile.rate_limit_rpm)
                 rate_limiter_status = "in_memory (degraded_fallback)"

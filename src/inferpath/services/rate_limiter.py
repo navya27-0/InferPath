@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import threading
 import time
+import uuid
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -165,6 +166,8 @@ class DistributedRateLimiter(BaseRateLimiter):
             cutoff = now - 60.0
             key = f"{self.key_prefix}{client_id}"
 
+            member_id = f"{now}:{uuid.uuid4().hex}"
+
             # Atomic evaluation via Lua script if supported by the Redis client
             if hasattr(self.redis_client, "eval") and callable(self.redis_client.eval):
                 lua_script = (
@@ -173,10 +176,11 @@ class DistributedRateLimiter(BaseRateLimiter):
                     "local cutoff = tonumber(ARGV[2])\n"
                     "local limit = tonumber(ARGV[3])\n"
                     "local ttl = tonumber(ARGV[4])\n"
+                    "local member = ARGV[5]\n"
                     "redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)\n"
                     "local current_count = redis.call('ZCARD', key)\n"
                     "if current_count < limit then\n"
-                    "    redis.call('ZADD', key, now, tostring(now))\n"
+                    "    redis.call('ZADD', key, now, member)\n"
                     "    redis.call('EXPIRE', key, ttl)\n"
                     "    return 1\n"
                     "else\n"
@@ -184,7 +188,7 @@ class DistributedRateLimiter(BaseRateLimiter):
                     "end"
                 )
                 res = self.redis_client.eval(
-                    lua_script, 1, key, now, cutoff, self.requests_per_minute, 65
+                    lua_script, 1, key, now, cutoff, self.requests_per_minute, 65, member_id
                 )
                 self.is_degraded = False
                 return bool(res)
@@ -203,7 +207,7 @@ class DistributedRateLimiter(BaseRateLimiter):
                     add_pipe = self.redis_client.pipeline(transaction=True)
                 except TypeError:
                     add_pipe = self.redis_client.pipeline()
-                add_pipe.zadd(key, {str(now): now})
+                add_pipe.zadd(key, {member_id: now})
                 add_pipe.expire(key, 65)
                 add_pipe.execute()
                 self.is_degraded = False
