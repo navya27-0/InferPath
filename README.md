@@ -311,7 +311,7 @@ Every empirical finding is backed by a committed artifact, an executable script,
 > **Simulated Workload & Reproducibility Notice**: Results are evaluated under reproducible offline simulated workloads using deterministic mock adapters. The `± 0.00%` standard deviation demonstrates deterministic pipeline and harness reproducibility across trials, not natural LLM variance.
 
 > [!IMPORTANT]
-> **Research Trade-Off Analysis**: Rather than asserting uncompromised quality parity, InferPath explores the multi-tier cost-latency-quality trade-off space. Under this benchmark workload, full InferPath (System C) achieves an **84.9% cost reduction** and **70.2% latency reduction** (from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup) relative to the Always-Large baseline (System A), with a measured quality pass rate decrease from 69.4% to 63.1% ($\Delta Q = -6.3\%$).
+> **Research Trade-Off Analysis**: Rather than asserting uncompromised quality parity, InferPath explores the multi-tier cost-latency-quality trade-off space. Under this benchmark workload, full InferPath (System C) achieves an **84.9% cost reduction** and **71.2% latency reduction** (from 89.5 ms to 25.8 ms, equivalent to a 3.47× speedup) relative to the Always-Large baseline (System A), with a measured quality pass rate decrease from 69.4% to 63.1% ($\Delta Q = -6.3\%$).
 
 The following empirical metrics were logged during the 3-repeat offline benchmark across 160 items in `data/pilot_dataset.json`:
 
@@ -400,7 +400,7 @@ python scripts/update_readme_results.py
 ### Understanding the Quality Pass Rate & Enterprise Privacy Invariants
 
 - **Enterprise Privacy Interception**: The 160-item `dev` benchmark contains 28 items (17.5%) classified as `internal` or `confidential`. Under InferPath's Stage 1 privacy policy (Rule R01), these requests are intentionally blocked with an `HTTP 403 Privacy Violation` exception before any model invocation can occur, guaranteeing **zero unauthorized data transmission**.
-- **Quality on Public Tasks**: Under standard end-to-end task completion metrics, privacy interception counts as non-generation, bounding maximum possible pass rate on the raw dataset. On the 132 public items, **InferPath (System C) achieves a 76.5% pass rate** compared to System A's 84.1% (a measured 7.6% quality trade-off under simulated workloads), while slashing inference cost by **84.9%** and latency by **70.2%** (from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup).
+- **Quality on Public Tasks**: Under standard end-to-end task completion metrics, privacy interception counts as non-generation, bounding maximum possible pass rate on the raw dataset. On the 132 public items, **InferPath (System C) achieves a 76.5% pass rate** compared to System A's 84.1% (a measured 7.6% quality trade-off under simulated workloads), while slashing inference cost by **84.9%** and latency by **71.2%** (from 89.5 ms to 25.8 ms, equivalent to a 3.47× speedup).
 - **Constraint-Aware vs. Learned Routing**: While the `RandomForest` classifier (`System_Learned`) makes fast statistical decisions, InferPath's `ConstraintAwareRouter` strictly enforces caller-defined constraints ($Q_{\min}, B_{\max}, L_{\max}$) prior to dispatch, pruning ineligible tiers and failing fast with `CONSTRAINTS_UNSATISFIABLE` (HTTP 422) without invoking backend models when no tier meets all constraints.
 
 ### Multi-Strategy Empirical Pareto Frontiers

@@ -75,7 +75,9 @@ class UserRequest(BaseModel):
 
     @property
     def maximum_latency_ms(self) -> float | None:
-        return self.task_parameters.maximum_latency_ms or self.task_parameters.max_latency_ms
+        if self.task_parameters.maximum_latency_ms is not None:
+            return self.task_parameters.maximum_latency_ms
+        return self.task_parameters.max_latency_ms
 
     @property
     def format(self) -> str:

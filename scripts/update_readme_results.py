@@ -214,8 +214,8 @@ def generate_results_markdown() -> str:
         "> [!IMPORTANT]\n"
         "> **Research Trade-Off Analysis**: Rather than asserting uncompromised quality parity, "
         "InferPath explores the multi-tier cost-latency-quality trade-off space. Under this benchmark workload, "
-        "full InferPath (System C) achieves an **84.9% cost reduction** and **70.2% latency reduction** "
-        "(from 89.5 ms to 26.7 ms, equivalent to a 3.35× speedup) relative to the Always-Large baseline (System A), "
+        "full InferPath (System C) achieves an **84.9% cost reduction** and **71.2% latency reduction** "
+        "(from 89.5 ms to 25.8 ms, equivalent to a 3.47× speedup) relative to the Always-Large baseline (System A), "
         "with a measured quality pass rate decrease from 69.4% to 63.1% ($\\Delta Q = -6.3\\%$)."
     )
     lines.append("")

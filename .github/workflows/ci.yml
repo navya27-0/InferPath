@@ -87,3 +87,24 @@ jobs:
           test $(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health/dependencies) -eq 401
           test $(curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: test_smoke_api_key_2026" http://127.0.0.1:8000/health/dependencies) -eq 200
           docker stop inferpath-smoke
+
+          # 4. Start local-demo Compose stack and verify both services start and become healthy
+          echo "Verifying that local-demo Docker Compose stack starts and reaches healthy status..."
+          docker compose -f docker-compose.local-demo.yml up -d
+          
+          for i in $(seq 1 15); do
+            API_HEALTH=$(docker inspect --format='{{json .State.Health.Status}}' inferpath-api-demo 2>/dev/null || echo '"unknown"')
+            DASH_HEALTH=$(docker inspect --format='{{json .State.Health.Status}}' inferpath-dashboard-demo 2>/dev/null || echo '"unknown"')
+            echo "Attempt $i: api=$API_HEALTH, dashboard=$DASH_HEALTH"
+            if [ "$API_HEALTH" = '"healthy"' ] && [ "$DASH_HEALTH" = '"healthy"' ]; then
+              echo "Both local-demo services are healthy!"
+              break
+            fi
+            sleep 2
+          done
+
+          # Verify endpoints on both services
+          curl -sf http://127.0.0.1:8000/health/live
+          curl -sf http://127.0.0.1:8501/_stcore/health
+
+          docker compose -f docker-compose.local-demo.yml down -v

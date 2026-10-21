@@ -163,8 +163,8 @@ class FallbackCoordinator:
                 return False
 
         if (
-            request.task_parameters.maximum_latency_ms is not None
-            and request.task_parameters.maximum_latency_ms < expected_latency_limit
+            request.maximum_latency_ms is not None
+            and request.maximum_latency_ms < expected_latency_limit
         ):
             route_trace.append({"step": "fallback_blocked", "reason": "user_latency_constraint"})
             return False

@@ -244,6 +244,16 @@ def create_app(
         )
 
     # Reject non-localhost bindings when unauthenticated
+    is_container_deployment = (
+        os.getenv("INFERPATH_CONTAINER_DEPLOYMENT", "").strip().lower() in ("true", "1", "yes")
+        or os.getenv("INFERPATH_CONTAINER", "").strip().lower() in ("true", "1", "yes")
+        or (
+            (os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"))
+            and os.getenv("INFERPATH_CONTAINER_DEPLOYMENT", "").strip().lower()
+            not in ("false", "0", "no")
+        )
+    )
+
     cli_host: str | None = None
     for i, arg in enumerate(sys.argv):
         if arg == "--host" and i + 1 < len(sys.argv):
@@ -257,12 +267,18 @@ def create_app(
         os.getenv("INFERPATH_HOST_BIND") or os.getenv("INFERPATH_BIND_HOST") or os.getenv("HOST")
     )
 
-    # Validate all configured host interfaces, checking CLI flag first as authoritative
+    # In container deployments, the internal daemon binds to 0.0.0.0 for container network ingress,
+    # while the externally published host interface is governed by INFERPATH_HOST_BIND.
+    # In standalone host deployments, the CLI --host directly binds the host's actual network interface.
     hosts_to_validate: list[str] = []
-    if cli_host:
-        hosts_to_validate.append(cli_host)
-    if env_host_bind and env_host_bind != cli_host:
-        hosts_to_validate.append(env_host_bind)
+    if is_container_deployment:
+        effective_published_bind = env_host_bind or "127.0.0.1"
+        hosts_to_validate.append(effective_published_bind)
+    else:
+        if cli_host:
+            hosts_to_validate.append(cli_host)
+        if env_host_bind and env_host_bind != cli_host:
+            hosts_to_validate.append(env_host_bind)
 
     for host_bind in hosts_to_validate:
         clean_bind = host_bind.strip().lower()

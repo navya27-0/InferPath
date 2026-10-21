@@ -14,6 +14,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
+      - INFERPATH_CONTAINER_DEPLOYMENT=true
       - INFERPATH_HOST_BIND=127.0.0.1
       - ADAPTER_MODE=simulated
       - ENVIRONMENT=development
@@ -39,6 +40,7 @@ services:
     ports:
       - "127.0.0.1:8501:8501"
     environment:
+      - INFERPATH_CONTAINER_DEPLOYMENT=true
       - INFERPATH_HOST_BIND=127.0.0.1
       - INFERPATH_DASHBOARD_BIND=127.0.0.1
       - INFERPATH_API_URL=http://api:8000
@@ -49,6 +51,12 @@ services:
       - INFERPATH_ENVIRONMENT=development
       - INFERPATH_DEPLOYMENT_MODE=local-demo
     command: ["streamlit", "run", "app/dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     depends_on:
       api:
         condition: service_healthy

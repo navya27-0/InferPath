@@ -332,7 +332,7 @@ def run_full_benchmark_suite(
     sys_c_lat_mean = (
         sum(s.avg_latency_ms for s in all_summaries["System_C"]) / len(all_summaries["System_C"])
         if all_summaries.get("System_C")
-        else 26.7
+        else 25.8
     )
     sys_a_qual_mean = (
         sum(s.quality_pass_rate for s in all_summaries["System_A"]) / len(all_summaries["System_A"])

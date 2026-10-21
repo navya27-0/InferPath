@@ -14,7 +14,8 @@ ENV PYTHONUNBUFFERED=1 \
     ENVIRONMENT=development \
     INFERPATH_VERSION=0.3.0 \
     INFERPATH_DEPLOYMENT_MODE=local-demo \
-    INFERPATH_HOST_BIND=127.0.0.1
+    INFERPATH_HOST_BIND=127.0.0.1 \
+    INFERPATH_CONTAINER_DEPLOYMENT=true
 
 WORKDIR /app
 
@@ -37,5 +38,5 @@ COPY app/ /app/app/
 # Expose ports: 8000 (FastAPI), 8501 (Streamlit Dashboard)
 EXPOSE 8000 8501
 
-# Default command: launch the FastAPI service
-CMD ["uvicorn", "inferpath.api.main:app", "--host", "127.0.0.1", "--port", "8000"]
+# Default command: launch the FastAPI service (internal container listener binds to 0.0.0.0 for container network ingress)
+CMD ["uvicorn", "inferpath.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

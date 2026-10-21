@@ -290,3 +290,36 @@ async def test_async_cost_limit_satisfied_but_latency_limit_exceeded(constraint_
         s.get("reason") for s in result.route_trace if s.get("step") == "fallback_blocked"
     ]
     assert "user_latency_constraint" in blocked_reasons
+
+
+def test_zero_latency_constraint_is_evaluated_and_fails_fast(constraint_pipeline):
+    """Explicit maximum_latency_ms=0.0 is not ignored as falsy None and fails constraint check."""
+    # 1. Test property preservation on UserRequest
+    req_tp_zero = UserRequest(
+        request_id="req_zero_prop",
+        prompt="Explain quantum entanglement",
+        task_parameters=TaskParameters(maximum_latency_ms=0.0),
+    )
+    assert req_tp_zero.maximum_latency_ms == 0.0
+    assert req_tp_zero.latency == 0.0
+    assert req_tp_zero.preferences["maximum_latency_ms"] == 0.0
+
+    # Legacy max_latency_ms field
+    req_legacy_zero = UserRequest(
+        request_id="req_legacy_zero_prop",
+        prompt="Explain quantum entanglement",
+        task_parameters=TaskParameters(max_latency_ms=0.0),
+    )
+    assert req_legacy_zero.maximum_latency_ms == 0.0
+    assert req_legacy_zero.latency == 0.0
+
+    # 2. Pipeline execution must evaluate 0.0ms limit and fail fast with CONSTRAINTS_UNSATISFIABLE
+    with pytest.raises(ConstraintsUnsatisfiableError) as exc_info:
+        constraint_pipeline.execute(req_tp_zero)
+    assert "latency" in exc_info.value.unsatisfied_constraints or "latency" in str(exc_info.value)
+
+    with pytest.raises(ConstraintsUnsatisfiableError) as exc_legacy:
+        constraint_pipeline.execute(req_legacy_zero)
+    assert "latency" in exc_legacy.value.unsatisfied_constraints or "latency" in str(
+        exc_legacy.value
+    )

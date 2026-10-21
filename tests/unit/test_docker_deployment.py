@@ -36,8 +36,11 @@ def test_dockerfile_syntax_and_security_configuration():
     assert any("INFERPATH_HOST_BIND=127.0.0.1" in line for line in lines), (
         "Dockerfile must default to loopback host bind (127.0.0.1)"
     )
-    assert any("127.0.0.1" in line for line in lines if "CMD" in line), (
-        "Dockerfile default command must bind to 127.0.0.1"
+    assert any("INFERPATH_CONTAINER_DEPLOYMENT=true" in line for line in lines), (
+        "Dockerfile must default to INFERPATH_CONTAINER_DEPLOYMENT=true"
+    )
+    assert any("uvicorn" in line and "--port" in line for line in lines if "CMD" in line), (
+        "Dockerfile default command must launch Uvicorn"
     )
 
 
@@ -145,6 +148,7 @@ def test_docker_compose_local_demo_configuration():
     assert "INFERPATH_DEPLOYMENT_MODE=local-demo" in api_env
     assert "ADAPTER_MODE=simulated" in api_env
     assert "INFERPATH_HOST_BIND=127.0.0.1" in api_env
+    assert "INFERPATH_CONTAINER_DEPLOYMENT=true" in api_env
 
     # Dashboard verification
     assert "dashboard" in services
@@ -153,3 +157,47 @@ def test_docker_compose_local_demo_configuration():
     dash_env = services["dashboard"]["environment"]
     assert "INFERPATH_DEPLOYMENT_MODE=local-demo" in dash_env
     assert "INFERPATH_HOST_BIND=127.0.0.1" in dash_env
+    assert "INFERPATH_CONTAINER_DEPLOYMENT=true" in dash_env
+
+
+def test_local_demo_container_deployment_startup_and_health(monkeypatch):
+    """Under container deployment, internal 0.0.0.0 bind is accepted when host bind is 127.0.0.1."""
+    import sys
+
+    monkeypatch.setenv("INFERPATH_CONTAINER_DEPLOYMENT", "true")
+    monkeypatch.setenv("INFERPATH_HOST_BIND", "127.0.0.1")
+    monkeypatch.setenv("INFERPATH_DEPLOYMENT_MODE", "local-demo")
+    monkeypatch.delenv("INFERPATH_API_KEY", raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["uvicorn", "inferpath.api.main:app", "--host", "0.0.0.0", "--port", "8000"],
+    )
+
+    app = create_app(deployment_mode="local-demo", api_key="")
+    client = TestClient(app)
+    resp = client.get("/health/live")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "alive"
+
+
+def test_local_demo_container_deployment_public_bind_fails_closed(monkeypatch):
+    """Under container deployment, publishing to 0.0.0.0 without API key halts startup."""
+    import sys
+
+    import pytest
+
+    monkeypatch.setenv("INFERPATH_CONTAINER_DEPLOYMENT", "true")
+    monkeypatch.setenv("INFERPATH_HOST_BIND", "0.0.0.0")
+    monkeypatch.setenv("INFERPATH_DEPLOYMENT_MODE", "local-demo")
+    monkeypatch.delenv("INFERPATH_API_KEY", raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["uvicorn", "inferpath.api.main:app", "--host", "0.0.0.0", "--port", "8000"],
+    )
+
+    with pytest.raises(
+        RuntimeError, match="Binding to public interface '0.0.0.0' is strictly prohibited"
+    ):
+        create_app(deployment_mode="local-demo", api_key="")

@@ -246,9 +246,9 @@ class RequestPipeline:
             )
 
         # Single authoritative constraint evaluation via ConstrainedOptimizationPolicy
-        q_min = request.task_parameters.minimum_quality if request.task_parameters else None
-        b_max = request.task_parameters.maximum_cost_usd if request.task_parameters else None
-        l_max = request.task_parameters.maximum_latency_ms if request.task_parameters else None
+        q_min = request.minimum_quality
+        b_max = request.maximum_cost_usd
+        l_max = request.maximum_latency_ms
         if decision.selected_tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D):
             feasible = self.constrained_policy.determine_feasible_set(request)
             if not feasible:
