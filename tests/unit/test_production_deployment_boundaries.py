@@ -466,10 +466,14 @@ def test_production_profile_enforces_redis_requirement(monkeypatch):
 
 
 class InMemoryFakeRedis:
-    """In-memory Redis fake with sorted set support for rate limiter testing."""
+    """In-memory Redis fake with sorted set and optimistic locking support for rate limiter testing."""
 
     def __init__(self):
         self._zsets = {}
+        self._versions = {}
+
+    def get_version(self, key: str) -> int:
+        return self._versions.get(key, 0)
 
     def zremrangebyscore(self, key: str, min_score: float | str, max_score: float | str) -> int:
         z = self._zsets.get(key, {})
@@ -477,6 +481,8 @@ class InMemoryFakeRedis:
         to_del = [m for m, s in z.items() if s <= max_val]
         for m in to_del:
             del z[m]
+        if to_del:
+            self._versions[key] = self._versions.get(key, 0) + 1
         return len(to_del)
 
     def zcard(self, key: str) -> int:
@@ -490,6 +496,8 @@ class InMemoryFakeRedis:
             if m not in self._zsets[key]:
                 added += 1
             self._zsets[key][m] = s
+        if added > 0:
+            self._versions[key] = self._versions.get(key, 0) + 1
         return added
 
     def expire(self, key: str, seconds: int) -> bool:
@@ -520,12 +528,35 @@ class FakeRedisPipeline:
     def __init__(self, client: InMemoryFakeRedis):
         self.client = client
         self.calls = []
+        self._watched = None
+        self._watched_version = None
+        self._in_multi = False
+
+    def watch(self, key):
+        self._watched = key
+        self._watched_version = self.client.get_version(key)
+        return self
+
+    def unwatch(self):
+        self._watched = None
+        self._watched_version = None
+        return self
+
+    def multi(self):
+        self._in_multi = True
+        return self
 
     def zremrangebyscore(self, key, min_s, max_s):
+        # In redis-py, if not in multi block and watching, command executes immediately
+        if self._watched is not None and not self._in_multi:
+            return self.client.zremrangebyscore(key, min_s, max_s)
         self.calls.append(("zrem", key, min_s, max_s))
         return self
 
     def zcard(self, key):
+        # In redis-py, if not in multi block and watching, command executes immediately
+        if self._watched is not None and not self._in_multi:
+            return self.client.zcard(key)
         self.calls.append(("zcard", key))
         return self
 
@@ -538,6 +569,15 @@ class FakeRedisPipeline:
         return self
 
     def execute(self):
+        if (
+            self._in_multi
+            and self._watched is not None
+            and self.client.get_version(self._watched) != self._watched_version
+        ):
+            self.calls = []
+            self._in_multi = False
+            raise RuntimeError("WatchError: watched key was modified during transaction")
+
         results = []
         for call in self.calls:
             if call[0] == "zrem":
@@ -549,6 +589,7 @@ class FakeRedisPipeline:
             elif call[0] == "expire":
                 results.append(self.client.expire(call[1], call[2]))
         self.calls = []
+        self._in_multi = False
         return results
 
 
@@ -608,6 +649,63 @@ def test_redis_rate_limiter_concurrency_stress(monkeypatch):
     assert results.count(True) == 5
     assert results.count(False) == 15
     assert fake_redis.zcard("inferpath:ratelimit:concurrent_client") == 5
+
+
+def test_redis_rate_limiter_fallback_concurrency_stress(monkeypatch):
+    """Verify concurrent requests through non-Lua fallback paths strictly enforce quotas without races."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from inferpath.services.rate_limiter import DistributedRateLimiter
+
+    monkeypatch.setattr(time, "time", lambda: 1700000000.0)
+
+    # 1. Fallback path with WATCH/MULTI/EXEC optimistic locking (eval = None)
+    fake_redis_watch = InMemoryFakeRedis()
+    fake_redis_watch.eval = None
+    limiter_watch = DistributedRateLimiter(redis_client=fake_redis_watch, requests_per_minute=4)
+
+    results_watch = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [
+            executor.submit(limiter_watch.is_allowed, "concurrent_fallback_watch")
+            for _ in range(20)
+        ]
+        for f in futures:
+            results_watch.append(f.result())
+
+    # Exactly 4 allowed, 16 rejected
+    assert results_watch.count(True) == 4
+    assert results_watch.count(False) == 16
+    assert fake_redis_watch.zcard("inferpath:ratelimit:concurrent_fallback_watch") == 4
+
+    # 2. Fallback path without WATCH support (serialized under self._fallback_lock)
+    class FakeRedisPipelineNoWatch(FakeRedisPipeline):
+        watch = None
+        unwatch = None
+        multi = None
+
+    class FakeRedisNoWatch(InMemoryFakeRedis):
+        def pipeline(self, transaction: bool = True):
+            return FakeRedisPipelineNoWatch(self)
+
+    fake_redis_nowatch = FakeRedisNoWatch()
+    fake_redis_nowatch.eval = None
+    limiter_nowatch = DistributedRateLimiter(redis_client=fake_redis_nowatch, requests_per_minute=3)
+
+    results_nowatch = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [
+            executor.submit(limiter_nowatch.is_allowed, "concurrent_fallback_nowatch")
+            for _ in range(20)
+        ]
+        for f in futures:
+            results_nowatch.append(f.result())
+
+    # Exactly 3 allowed, 17 rejected
+    assert results_nowatch.count(True) == 3
+    assert results_nowatch.count(False) == 17
+    assert fake_redis_nowatch.zcard("inferpath:ratelimit:concurrent_fallback_nowatch") == 3
 
 
 def test_structured_logging_recursive_sanitization():

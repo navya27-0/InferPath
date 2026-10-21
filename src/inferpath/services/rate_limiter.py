@@ -132,6 +132,18 @@ class DistributedRateLimiter(BaseRateLimiter):
       RateLimiterBackendError on outages to prevent quota evasion.
     - fail_closed=False: Degrades to bounded process-local tracking while recording
       `is_degraded=True` and incrementing failure count for health telemetry.
+
+    Concurrency & Atomicity Guarantees:
+    - Primary Atomic Path: When the Redis client provides `eval`, execution runs via an atomic
+      Lua script directly on the Redis engine. This guarantees O(1) atomic check-and-insert
+      across all horizontal instances and worker threads without inter-process race conditions.
+    - Fallback Atomic Path: When `eval` is not supported, the rate limiter uses Redis optimistic
+      locking (WATCH/MULTI/EXEC) when available, synchronized under a local thread lock
+      (`self._fallback_lock`) to serialize concurrent thread dispatches and prevent simultaneous
+      capacity over-allocation.
+    - Distributed Enforcement Restriction: Strict multi-worker distributed quota guarantees
+      require a Redis engine and client supporting Lua EVAL or WATCH/MULTI transactions. In
+      environments lacking both, enforcement is restricted to single-process concurrency.
     """
 
     def __init__(
@@ -148,6 +160,7 @@ class DistributedRateLimiter(BaseRateLimiter):
         self.is_degraded: bool = False
         self.failure_count: int = 0
         self._fallback_limiter = RateLimiter(requests_per_minute=requests_per_minute)
+        self._fallback_lock = threading.Lock()
 
     def is_allowed(self, client_id: str) -> bool:
         """Determines if request is allowed using distributed backend or fallback."""
@@ -193,27 +206,66 @@ class DistributedRateLimiter(BaseRateLimiter):
                 self.is_degraded = False
                 return bool(res)
 
-            try:
-                pipe = self.redis_client.pipeline(transaction=True)
-            except TypeError:
-                pipe = self.redis_client.pipeline()
-            pipe.zremrangebyscore(key, "-inf", cutoff)
-            pipe.zcard(key)
-            results = pipe.execute()
-            count = results[1] if len(results) > 1 else (results[0] if results else 0)
+            # Fallback path when Redis Lua eval() is unavailable on the client.
+            # Synchronized via self._fallback_lock and optimistic transaction checks (WATCH/MULTI/EXEC)
+            # to prevent concurrent check-then-set race conditions where two requests could observe
+            # available quota simultaneously and both be admitted.
+            with self._fallback_lock:
+                max_retries = 5
+                for _ in range(max_retries):
+                    try:
+                        pipe = self.redis_client.pipeline(transaction=True)
+                    except TypeError:
+                        pipe = self.redis_client.pipeline()
 
-            if count < self.requests_per_minute:
-                try:
-                    add_pipe = self.redis_client.pipeline(transaction=True)
-                except TypeError:
-                    add_pipe = self.redis_client.pipeline()
-                add_pipe.zadd(key, {member_id: now})
-                add_pipe.expire(key, 65)
-                add_pipe.execute()
+                    try:
+                        if hasattr(pipe, "watch") and callable(pipe.watch):
+                            pipe.watch(key)
+                            pipe.zremrangebyscore(key, "-inf", cutoff)
+                            count = pipe.zcard(key)
+                            if count < self.requests_per_minute:
+                                if hasattr(pipe, "multi") and callable(pipe.multi):
+                                    pipe.multi()
+                                pipe.zadd(key, {member_id: now})
+                                pipe.expire(key, 65)
+                                pipe.execute()
+                                self.is_degraded = False
+                                return True
+                            else:
+                                if hasattr(pipe, "unwatch") and callable(pipe.unwatch):
+                                    pipe.unwatch()
+                                self.is_degraded = False
+                                return False
+                        else:
+                            pipe.zremrangebyscore(key, "-inf", cutoff)
+                            pipe.zcard(key)
+                            results = pipe.execute()
+                            count = (
+                                results[1] if len(results) > 1 else (results[0] if results else 0)
+                            )
+
+                            if count < self.requests_per_minute:
+                                try:
+                                    add_pipe = self.redis_client.pipeline(transaction=True)
+                                except TypeError:
+                                    add_pipe = self.redis_client.pipeline()
+                                add_pipe.zadd(key, {member_id: now})
+                                add_pipe.expire(key, 65)
+                                add_pipe.execute()
+                                self.is_degraded = False
+                                return True
+                            self.is_degraded = False
+                            return False
+                    except Exception as pipe_err:
+                        # Retry on optimistic concurrency conflict (e.g. WatchError)
+                        if (
+                            "WatchError" in type(pipe_err).__name__
+                            or "watch" in str(pipe_err).lower()
+                        ):
+                            continue
+                        raise
                 self.is_degraded = False
-                return True
-            self.is_degraded = False
-            return False
+                return False
         except Exception as err:
             self.is_degraded = True
             self.failure_count += 1
