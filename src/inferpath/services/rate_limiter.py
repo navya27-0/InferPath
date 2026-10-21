@@ -137,10 +137,10 @@ class DistributedRateLimiter(BaseRateLimiter):
     - Primary Atomic Path: When the Redis client provides `eval`, execution runs via an atomic
       Lua script directly on the Redis engine. This guarantees O(1) atomic check-and-insert
       across all horizontal instances and worker threads without inter-process race conditions.
-    - Fallback Atomic Path: When `eval` is not supported, the rate limiter uses Redis optimistic
-      locking (WATCH/MULTI/EXEC) when available, synchronized under a local thread lock
-      (`self._fallback_lock`) to serialize concurrent thread dispatches and prevent simultaneous
-      capacity over-allocation.
+    - Fallback Atomic Path: When `eval` is not supported, the rate limiter prunes expired
+      entries prior to establishing optimistic WATCH boundaries, reads current quota, and
+      atomically commits conditional insertions via MULTI/EXEC under thread synchronization
+      (`self._fallback_lock`), handling concurrency conflicts via bounded retries.
     - Distributed Enforcement Restriction: Strict multi-worker distributed quota guarantees
       require a Redis engine and client supporting Lua EVAL or WATCH/MULTI transactions. In
       environments lacking both, enforcement is restricted to single-process concurrency.
@@ -213,6 +213,20 @@ class DistributedRateLimiter(BaseRateLimiter):
             with self._fallback_lock:
                 max_retries = 5
                 for _ in range(max_retries):
+                    # Prune expired entries before establishing WATCH to ensure cleanup
+                    # does not dirty the watched key for this transaction.
+                    try:
+                        if hasattr(self.redis_client, "zremrangebyscore") and callable(
+                            self.redis_client.zremrangebyscore
+                        ):
+                            self.redis_client.zremrangebyscore(key, "-inf", cutoff)
+                        else:
+                            clean_pipe = self.redis_client.pipeline()
+                            clean_pipe.zremrangebyscore(key, "-inf", cutoff)
+                            clean_pipe.execute()
+                    except Exception:
+                        pass
+
                     try:
                         pipe = self.redis_client.pipeline(transaction=True)
                     except TypeError:
@@ -221,7 +235,6 @@ class DistributedRateLimiter(BaseRateLimiter):
                     try:
                         if hasattr(pipe, "watch") and callable(pipe.watch):
                             pipe.watch(key)
-                            pipe.zremrangebyscore(key, "-inf", cutoff)
                             count = pipe.zcard(key)
                             if count < self.requests_per_minute:
                                 if hasattr(pipe, "multi") and callable(pipe.multi):

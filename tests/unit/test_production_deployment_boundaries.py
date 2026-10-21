@@ -708,6 +708,53 @@ def test_redis_rate_limiter_fallback_concurrency_stress(monkeypatch):
     assert fake_redis_nowatch.zcard("inferpath:ratelimit:concurrent_fallback_nowatch") == 3
 
 
+def test_redis_rate_limiter_fallback_with_seeded_expired_entries(monkeypatch):
+    """Verify WATCH/MULTI/EXEC fallback handles seeded expired entries without self-invalidating."""
+    import time
+
+    from inferpath.services.rate_limiter import DistributedRateLimiter
+
+    fake_redis = InMemoryFakeRedis()
+    fake_redis.eval = None  # Force fallback WATCH/MULTI/EXEC path
+
+    # Current time: 1700000060.0 (window cutoff is 1700000000.0)
+    current_time = 1700000060.0
+    monkeypatch.setattr(time, "time", lambda: current_time)
+
+    key = "inferpath:ratelimit:client_expired_seed"
+    # Seed 5 expired entries (< 1700000000.0)
+    expired_mapping = {f"exp_{i}": 1699999900.0 + i for i in range(5)}
+    # Seed 1 valid active entry in current window (1700000030.0)
+    expired_mapping["valid_prior"] = 1700000030.0
+    fake_redis.zadd(key, expired_mapping)
+
+    # Total entries seeded before cleanup is 6
+    assert fake_redis.zcard(key) == 6
+
+    # Capacity is 2 requests per minute
+    limiter = DistributedRateLimiter(redis_client=fake_redis, requests_per_minute=2)
+
+    # 1. First request: expired entries must be pruned before WATCH without invalidating transaction.
+    # Prior valid count = 1. Limit = 2. So request 1 must be permitted!
+    assert limiter.is_allowed("client_expired_seed") is True
+
+    # After request 1, the 5 expired entries are gone; 1 prior valid + 1 new entry = 2 active entries.
+    assert fake_redis.zcard(key) == 2
+
+    # 2. Second request: active count = 2 >= limit = 2 -> rejected!
+    assert limiter.is_allowed("client_expired_seed") is False
+    assert fake_redis.zcard(key) == 2
+
+    # 3. Advance time by 61 seconds: all existing entries are now expired
+    advanced_time = current_time + 61.0
+    monkeypatch.setattr(time, "time", lambda: advanced_time)
+
+    # Request permitted after window slides, pruning previous 2 entries
+    assert limiter.is_allowed("client_expired_seed") is True
+    # Exactly 1 active entry remains in the new window
+    assert fake_redis.zcard(key) == 1
+
+
 def test_structured_logging_recursive_sanitization():
     """Verify structured logger recursively scrubs API keys and sensitive tokens in extra fields."""
     import json
