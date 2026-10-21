@@ -59,10 +59,17 @@ def compute_empirical_human_metrics() -> dict:
             "evidence_label": "[MEASURED]",
             "source_data_file": "data/human_ratings.csv",
             "evaluated_items_count": items_count,
+            "candidate_outputs_count": items_count * 2,
             "total_review_records": len(records),
             "reviewers": agreement.get("reviewers", ["Reviewer_1", "Reviewer_2"]),
             "rubric": "5-point preregistered ordinal Likert rubric",
             "blinding": "Double-blind randomized candidate comparison",
+            "methodological_notes": (
+                "Evaluates 30 distinct benchmark items with paired candidate outputs (Candidate A and Candidate B) "
+                "scored by 2 independent reviewers (30 items x 2 candidates x 2 reviewers = 120 total review records). "
+                "Includes offline prototype runs where deterministic fallback mock outputs were evaluated against "
+                "the human rubric and penalized accordingly (e.g. score 2/5 for deficient mock text)."
+            ),
         },
         "agreement_metrics": {
             "quadratic_weighted_cohen_kappa": human_human_kappa,

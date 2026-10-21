@@ -138,7 +138,7 @@ def generate_results_markdown() -> str:
         "| **Workload Caching Performance** | [`data/results/caching_workload_analysis.json`](data/results/caching_workload_analysis.json) | `python scripts/evaluate_caching_workloads.py` | [`tests/unit/test_caching_workloads.py`](tests/unit/test_caching_workloads.py) | `[SIMULATED TRACE]` | 10x-35x latency speedup on repetitive Zipfian traffic; 1.2ms miss penalty on long-tail. |"
     )
     lines.append(
-        "| **Measured Dual-Annotator Human Study** | [`data/results/human_study_measured.json`](data/results/human_study_measured.json) | `python scripts/compute_empirical_human_metrics.py` | [`tests/unit/test_human_review_empirical.py`](tests/unit/test_human_review_empirical.py) | `[MEASURED]` | Double-blind 2-reviewer evaluation on 60 items; quadratic Cohen's $\\kappa_w = 0.8594$ [MEASURED]. |"
+        "| **Measured Dual-Annotator Human Study** | [`data/results/human_study_measured.json`](data/results/human_study_measured.json) | `python scripts/compute_empirical_human_metrics.py` | [`tests/unit/test_human_review_empirical.py`](tests/unit/test_human_review_empirical.py) | `[MEASURED]` | Double-blind 2-reviewer evaluation on 30 items (60 candidate pairs, 120 total review records); quadratic Cohen's $\\kappa_w = 0.8594$ [MEASURED]. |"
     )
     lines.append(
         "| **Simulated Multi-Annotator Study** | [`data/results/human_study_expanded.json`](data/results/human_study_expanded.json) | `python scripts/run_expanded_human_study.py` | [`tests/unit/test_human_review_expanded.py`](tests/unit/test_human_review_expanded.py) | `[SIMULATED STUDY]` | Synthetic 3-annotator simulation on 120 items; Fleiss' $\\kappa = 0.2530$ (Sys A) / $0.1569$ (Sys C) under simulated noise; $\\kappa_w = 0.4721$ automated judge correlation. |"
@@ -153,7 +153,7 @@ def generate_results_markdown() -> str:
         "| **Total Cost of Ownership (TCO)** | [`data/results/tco_analysis.json`](data/results/tco_analysis.json) | `python scripts/evaluate_tco.py` | [`tests/unit/test_tco_model.py`](tests/unit/test_tco_model.py) | `[MODELED]` | Router overhead drops from 10.1% (<25 tokens) to <0.3% (>2,000 tokens). |"
     )
     lines.append(
-        "| **One-Command Master Reproduction** | [`docs/reproduction_report.md`](docs/reproduction_report.md) | `python scripts/reproduce_all.py` | [`tests/unit/test_reproducibility.py`](tests/unit/test_reproducibility.py) | `[HERMETIC PIPELINE]` | 12 verification stages execute in ~89s with SHA-256 provenance manifest. |"
+        "| **One-Command Master Reproduction** | [`docs/reproduction_report.md`](docs/reproduction_report.md) | `python scripts/reproduce_all.py` | [`tests/unit/test_reproducibility.py`](tests/unit/test_reproducibility.py) | `[HERMETIC PIPELINE]` | 13 verification stages execute in ~89s with SHA-256 provenance manifest. |"
     )
     lines.append("")
 
@@ -344,7 +344,7 @@ def generate_results_markdown() -> str:
     lines.append("")
     lines.append("- [Claims and Methodological Evidence Matrix](docs/claims_and_evidence.md)")
     lines.append(
-        "- [Expanded Multi-Rater Human Evaluation Study (120 Items, 3 Annotators)](docs/human_evaluation_study.md)"
+        "- [Human Evaluation Studies: Measured Dual-Annotator Review & Simulated Multi-Rater Calibration](docs/human_evaluation_study.md)"
     )
     lines.append(
         "- [Simulator Calibration, Goodness-of-Fit & Sensitivity](docs/simulator_calibration.md)"

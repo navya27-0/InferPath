@@ -50,22 +50,37 @@ def test_protected_profile_requires_auth_for_diagnostics_and_metrics(mock_pipeli
     assert "rate_limiter" in auth_data
     assert "profile" in auth_data
 
-    # 4. /health/dependencies without credentials rejected with 401
+    # 4. Public readiness probe without credentials returns minimal status (no leaked internals)
+    ready_anon = client.get("/health/ready")
+    assert ready_anon.status_code == 200
+    ready_anon_data = ready_anon.json()
+    assert ready_anon_data["status"] == "ready"
+    assert "rate_limiter" not in ready_anon_data
+    assert "profile" not in ready_anon_data
+
+    # 5. Authenticated readiness probe returns complete operational details
+    ready_auth = client.get("/health/ready", headers={"X-API-Key": "operator_secret_key_123"})
+    assert ready_auth.status_code == 200
+    ready_auth_data = ready_auth.json()
+    assert "rate_limiter" in ready_auth_data
+    assert "profile" in ready_auth_data
+
+    # 6. /health/dependencies without credentials rejected with 401
     deps_anon = client.get("/health/dependencies")
     assert deps_anon.status_code == 401
     assert deps_anon.json()["code"] == "UNAUTHORIZED"
 
-    # 5. /health/dependencies with valid credentials succeeds
+    # 7. /health/dependencies with valid credentials succeeds
     deps_auth = client.get("/health/dependencies", headers={"X-API-Key": "operator_secret_key_123"})
     assert deps_auth.status_code == 200
     assert deps_auth.json()["status"] == "healthy"
 
-    # 6. /metrics without credentials rejected with 401
+    # 8. /metrics without credentials rejected with 401
     metrics_anon = client.get("/metrics")
     assert metrics_anon.status_code == 401
     assert metrics_anon.json()["code"] == "UNAUTHORIZED"
 
-    # 7. /metrics with Bearer token succeeds
+    # 9. /metrics with Bearer token succeeds
     metrics_auth = client.get(
         "/metrics", headers={"Authorization": "Bearer operator_secret_key_123"}
     )
@@ -122,3 +137,20 @@ def test_cli_host_detection_allows_loopback_binding(monkeypatch):
 
     app = create_app(deployment_mode="local-demo", api_key="")
     assert app is not None
+
+
+def test_cli_host_overrides_env_bind_and_halts_on_mismatch(monkeypatch):
+    """Setting INFERPATH_HOST_BIND=127.0.0.1 while passing --host 0.0.0.0 on CLI fails closed."""
+    monkeypatch.setenv("INFERPATH_HOST_BIND", "127.0.0.1")
+    monkeypatch.delenv("HOST", raising=False)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["uvicorn", "inferpath.api.main:app", "--host", "0.0.0.0", "--port", "8000"],
+    )
+
+    with pytest.raises(
+        RuntimeError, match="Binding to public interface '0.0.0.0' is strictly prohibited"
+    ):
+        create_app(deployment_mode="local-demo", api_key="")

@@ -58,3 +58,39 @@ To prevent reviewers or operators from conflating research simulation with enter
 | **Telemetry** | Local JSON experiment log | Console / `/metrics` | OTel Collector / Datadog |
 | **Privacy Layer** | Regex & pattern detector | Pattern detector | Defense-in-depth + enterprise DLP |
 | **Scale Target** | 1 process ($N \le 25$) | Docker container ($N \le 50$) | Multi-replica K8s ($N \ge 500$) |
+
+---
+
+## 3. Operational Hardening & Production Pre-Flight Checklist
+
+When transitioning from Mode 2 (Demonstration) to Mode 3 (Production Candidate), operators must verify the following security and infrastructure configurations:
+
+### 3.1 Multi-Worker Distributed Rate Limiting
+Under multi-worker Uvicorn configurations (`--workers 4`) or multi-replica Kubernetes deployments, independent in-memory rate limiters permit per-worker request bursts that multiply the effective traffic threshold by worker count.
+
+To enforce global cluster-wide rate limits:
+1. Provide a managed Redis connection string via `INFERPATH_REDIS_URL` (e.g. `redis://:auth_token@redis-cluster.internal:6379/0`).
+2. Enforce Redis strict mode by setting `INFERPATH_REQUIRE_REDIS=true`. This ensures the application halts during startup if Redis cannot be reached, rather than silently degrading to local in-memory limiting.
+3. Configure fail-closed semantics with `INFERPATH_RATE_LIMIT_FAIL_CLOSED=true` to reject incoming traffic with HTTP 429 when the Redis backend experiences transient outages.
+
+```bash
+export INFERPATH_PROFILE=production
+export INFERPATH_REDIS_URL=redis://:strong_password@redis-master.infra:6379/0
+export INFERPATH_REQUIRE_REDIS=true
+export INFERPATH_RATE_LIMIT_FAIL_CLOSED=true
+```
+
+### 3.2 Secret Management & Authentication Verification
+- **API Key Requirement**: Production profile (`ENVIRONMENT=production` or `INFERPATH_PROFILE=production`) halts startup immediately if `INFERPATH_API_KEY` is empty. Never deploy production endpoints without setting a strong secret key.
+- **Provider API Keys**: When running in real-provider mode without mock fallback (`allow_mock_fallback=False`), `OPENROUTER_API_KEY` must be configured.
+- **Secret Manager Integration**: Configure cloud secret providers using [`GLOBAL_SECRET_MANAGER.register_provider()`](../src/inferpath/security/secret_manager.py) to resolve secrets dynamically from AWS Secrets Manager, GCP Secret Manager, or HashiCorp Vault rather than static plaintext files.
+
+### 3.3 Network Interface Binding Safeguards
+- **Loopback Default**: InferPath defaults to `127.0.0.1` (`INFERPATH_HOST_BIND=127.0.0.1`).
+- **Fail-Closed Binding Guard**: Binding to public interfaces (`0.0.0.0` or any non-loopback IP) is strictly rejected by the application startup guard under unauthenticated profiles (`local-demo`). Public exposure requires an authenticated profile (`production` or `staging`) and an explicit `INFERPATH_API_KEY`.
+- **Authoritative CLI Check**: The startup guard validates both environment variables and CLI arguments (`--host 0.0.0.0`), preventing configuration mismatch bypasses.
+- **Reverse Proxy Headers**: When deploying behind an ingress proxy (e.g., NGINX, Envoy, Cloudflare), configure trusted proxy CIDRs via `INFERPATH_TRUSTED_PROXIES` (e.g. `10.0.0.0/8,172.16.0.0/12`) so `X-Forwarded-For` client IP addresses are validated accurately for rate limiting.
+
+### 3.4 Diagnostic Telemetry Protection
+- **Readiness Probes**: `/health/live` and `/health/ready` serve as unauthenticated Kubernetes probes returning minimal liveness/readiness signals (`status`, `service`, `version`). Detailed internals (active profile, rate limiter status) are restricted to authenticated operators.
+- **Diagnostics & Metrics**: `/health/dependencies` and `/metrics` require valid API key authentication (`X-API-Key` or `Authorization: Bearer <key>`) under protected deployment profiles.

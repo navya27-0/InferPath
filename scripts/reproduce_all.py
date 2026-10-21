@@ -10,9 +10,10 @@ Executes and verifies:
 7. Model registry and market drift evaluation.
 8. Total Cost of Ownership (TCO) evaluation.
 9. Workload trace caching evaluation.
-10. Expanded multi-rater human evaluation study.
-11. Public reproducibility manifest generation.
-12. README benchmark results synchronization.
+10. Measured dual-annotator human evaluation study ([MEASURED]).
+11. Simulated multi-annotator calibration study ([SIMULATED STUDY]).
+12. Public reproducibility manifest generation.
+13. README benchmark results synchronization.
 """
 
 from __future__ import annotations

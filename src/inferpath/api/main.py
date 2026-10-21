@@ -244,19 +244,27 @@ def create_app(
         )
 
     # Reject non-localhost bindings when unauthenticated
-    host_bind = (
+    cli_host: str | None = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--host" and i + 1 < len(sys.argv):
+            cli_host = sys.argv[i + 1]
+            break
+        elif arg.startswith("--host="):
+            cli_host = arg.split("=", 1)[1]
+            break
+
+    env_host_bind = (
         os.getenv("INFERPATH_HOST_BIND") or os.getenv("INFERPATH_BIND_HOST") or os.getenv("HOST")
     )
-    if not host_bind:
-        # Detect if Uvicorn was launched with explicit --host CLI arguments
-        for i, arg in enumerate(sys.argv):
-            if arg == "--host" and i + 1 < len(sys.argv):
-                host_bind = sys.argv[i + 1]
-                break
-            elif arg.startswith("--host="):
-                host_bind = arg.split("=", 1)[1]
-                break
-    if host_bind:
+
+    # Validate all configured host interfaces, checking CLI flag first as authoritative
+    hosts_to_validate: list[str] = []
+    if cli_host:
+        hosts_to_validate.append(cli_host)
+    if env_host_bind and env_host_bind != cli_host:
+        hosts_to_validate.append(env_host_bind)
+
+    for host_bind in hosts_to_validate:
         clean_bind = host_bind.strip().lower()
         is_loopback = clean_bind in ("127.0.0.1", "localhost", "::1") or clean_bind.startswith(
             "127."
@@ -403,6 +411,17 @@ def create_app(
             },
         )
 
+    def _is_authenticated(req: Request) -> bool:
+        client_key = req.headers.get("X-API-Key")
+        if not client_key:
+            auth_header = req.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                client_key = auth_header[7:].strip()
+        return bool(
+            (required_api_key and _constant_time_compare(client_key, required_api_key))
+            or (not active_profile.require_api_key and not required_api_key)
+        )
+
     def _verify_auth(req: Request, operation_desc: str = "request execution") -> None:
         client_key = req.headers.get("X-API-Key")
         if not client_key:
@@ -433,21 +452,7 @@ def create_app(
     @app.get("/health")
     @app.get("/v1/health")
     async def health_check(request: Request):
-        # Determine whether caller is authenticated or if unauthenticated profile is active
-        is_authenticated = False
-        client_key = request.headers.get("X-API-Key")
-        if not client_key:
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                client_key = auth_header[7:].strip()
-        if (
-            required_api_key
-            and _constant_time_compare(client_key, required_api_key)
-            or not active_profile.require_api_key
-            and not required_api_key
-        ):
-            is_authenticated = True
-
+        is_authenticated = _is_authenticated(request)
         is_degraded = getattr(limiter, "is_degraded", False)
         status_str = "degraded" if is_degraded else "healthy"
 
@@ -480,7 +485,17 @@ def create_app(
 
     @app.get("/health/ready")
     @app.get("/v1/health/ready")
-    async def health_ready():
+    async def health_ready(request: Request):
+        is_authenticated = _is_authenticated(request)
+
+        # Under protected profiles without operator authentication, emit minimal readiness status
+        if not is_authenticated:
+            return {
+                "status": "ready",
+                "service": "inferpath",
+                "version": __version__,
+            }
+
         return {
             "status": "ready",
             "service": "inferpath",
