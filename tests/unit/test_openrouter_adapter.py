@@ -219,3 +219,132 @@ def test_budget_cap_prevents_dispatch(sample_pricing_table):
 
     with pytest.raises(BudgetExceededError, match="exceeds remaining budget"):
         adapter.generate("A complex prompt that would require substantial tokens")
+
+
+@pytest.mark.asyncio
+async def test_pipeline_openrouter_missing_usage_sync_and_async(sample_pricing_table):
+    """Pipeline and cost accumulator gracefully handle missing provider usage without raising TypeError."""
+    from inferpath.models.domain import UserRequest
+    from inferpath.models.enums import PrivacyClass
+    from inferpath.pipeline import RequestPipeline
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        mock_data = {
+            "id": "gen-missing-usage",
+            "choices": [
+                {"message": {"role": "assistant", "content": "Analysis of quantum state vector."}}
+            ],
+            # usage metadata intentionally omitted by provider
+        }
+        return httpx.Response(200, json=mock_data)
+
+    transport = httpx.MockTransport(handler)
+    sync_client = httpx.Client(transport=transport)
+    async_client = httpx.AsyncClient(transport=transport)
+
+    adapter = OpenRouterAdapter(
+        model_id="google/gemini-2.5-flash",
+        pricing_table=sample_pricing_table,
+        api_key="sk-test-key",
+        client=sync_client,
+        async_client=async_client,
+    )
+
+    pipeline = RequestPipeline(
+        pricing_table=sample_pricing_table,
+        small_adapter=adapter,
+        large_adapter=adapter,
+    )
+
+    req_sync = UserRequest(
+        request_id="req_missing_usage_sync",
+        prompt="Explain quantum entanglement in detail",
+        privacy_class=PrivacyClass.PUBLIC,
+    )
+
+    # 1. Synchronous execution
+    res_sync = pipeline.execute(req_sync)
+    assert res_sync.final_output == "Analysis of quantum state vector."
+    assert res_sync.cost_usd.value is None
+    assert res_sync.cost_usd.provenance == ProvenanceLabel.UNAVAILABLE
+    assert res_sync.actual_calculated_cost_usd.value is None
+    assert res_sync.actual_calculated_cost_usd.provenance == ProvenanceLabel.UNAVAILABLE
+    assert res_sync.input_tokens.value is None
+    assert res_sync.input_tokens.provenance == ProvenanceLabel.UNAVAILABLE
+    assert res_sync.output_tokens.value is None
+    assert res_sync.output_tokens.provenance == ProvenanceLabel.UNAVAILABLE
+    assert res_sync.energy_wh.value is None
+    assert res_sync.energy_wh.provenance == ProvenanceLabel.UNAVAILABLE
+    assert res_sync.water_ml.value is None
+    assert res_sync.water_ml.provenance == ProvenanceLabel.UNAVAILABLE
+
+    # 2. Asynchronous execution
+    req_async = UserRequest(
+        request_id="req_missing_usage_async",
+        prompt="Explain quantum entanglement in detail",
+        privacy_class=PrivacyClass.PUBLIC,
+    )
+    res_async = await pipeline.execute_async(req_async)
+    assert res_async.final_output == "Analysis of quantum state vector."
+    assert res_async.cost_usd.value is None
+    assert res_async.cost_usd.provenance == ProvenanceLabel.UNAVAILABLE
+    assert res_async.actual_calculated_cost_usd.value is None
+    assert res_async.actual_calculated_cost_usd.provenance == ProvenanceLabel.UNAVAILABLE
+    assert res_async.input_tokens.value is None
+    assert res_async.input_tokens.provenance == ProvenanceLabel.UNAVAILABLE
+    assert res_async.output_tokens.value is None
+    assert res_async.output_tokens.provenance == ProvenanceLabel.UNAVAILABLE
+
+
+def test_api_openrouter_missing_usage_returns_200_with_null_cost(sample_pricing_table):
+    """FastAPI endpoint /v1/respond returns HTTP 200 with null cost and unavailable provenance."""
+    from fastapi.testclient import TestClient
+
+    from inferpath.api.main import create_app
+    from inferpath.pipeline import RequestPipeline
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        mock_data = {
+            "id": "gen-missing-usage",
+            "choices": [
+                {"message": {"role": "assistant", "content": "Analysis of quantum state vector."}}
+            ],
+        }
+        return httpx.Response(200, json=mock_data)
+
+    transport = httpx.MockTransport(handler)
+    sync_client = httpx.Client(transport=transport)
+    async_client = httpx.AsyncClient(transport=transport)
+
+    adapter = OpenRouterAdapter(
+        model_id="google/gemini-2.5-flash",
+        pricing_table=sample_pricing_table,
+        api_key="sk-test-key",
+        client=sync_client,
+        async_client=async_client,
+    )
+
+    pipeline = RequestPipeline(
+        pricing_table=sample_pricing_table,
+        small_adapter=adapter,
+        large_adapter=adapter,
+    )
+
+    app = create_app(pipeline=pipeline, deployment_mode="local-demo")
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/respond",
+        json={
+            "prompt": "Explain quantum entanglement in detail",
+            "privacy_class": "public",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["text"] == "Analysis of quantum state vector."
+    assert body["cost_usd"] is None
+    assert body["cost_provenance"] == "unavailable"
+    assert body["actual_calculated_cost_usd"] is None
+    assert body["input_tokens"] is None
+    assert body["input_tokens_provenance"] == "unavailable"

@@ -172,22 +172,26 @@ class RunBudgetTracker:
             self.reserved_usd += estimated_cost
             return token
 
-    def reconcile(self, token: str, actual_cost: float) -> None:
+    def reconcile(self, token: str, actual_cost: float | None = None) -> None:
         """Reconciles reservation with actual calculated cost.
 
         Guarantees:
+        - If actual_cost is None (e.g. usage unavailable from provider), falls back to the reserved estimate.
         - Validates that actual_cost is finite and non-negative.
         - Releases active reservation.
         - Increments cumulative spent_usd.
         - If cumulative spend exceeds max_usd (when max_usd > 0), marks state as EXCEEDED
           and raises BudgetExceededError to guarantee a hard cap.
         """
-        if not math.isfinite(actual_cost):
-            raise ValueError(f"Actual cost must be a finite number, got {actual_cost}")
-        if actual_cost < 0:
-            raise ValueError("Actual cost cannot be negative.")
-
         with self._lock:
+            if actual_cost is None:
+                actual_cost = self._active_reservations.get(token, 0.0)
+
+            if not math.isfinite(actual_cost):
+                raise ValueError(f"Actual cost must be a finite number, got {actual_cost}")
+            if actual_cost < 0:
+                raise ValueError("Actual cost cannot be negative.")
+
             reserved = self._active_reservations.pop(token, None)
             if reserved is None:
                 return

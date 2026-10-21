@@ -236,14 +236,14 @@ class PipelineResult(BaseModel):
     fallback_history: list[FallbackRecord] = Field(default_factory=list)
     route_trace: list[dict[str, Any]] = Field(default_factory=list)
     total_latency_ms: ProvenanceValue[float]
-    cost_usd: ProvenanceValue[float]
+    cost_usd: ProvenanceValue[float | None]
     energy_wh: ProvenanceValue[float | None]
     water_ml: ProvenanceValue[float | None]
     input_tokens: ProvenanceValue[int | None] | None = None
     output_tokens: ProvenanceValue[int | None] | None = None
-    provider_reported_cost_usd: ProvenanceValue[float] | None = None
-    estimated_call_cost_usd: ProvenanceValue[float] | None = None
-    actual_calculated_cost_usd: ProvenanceValue[float] | None = None
+    provider_reported_cost_usd: ProvenanceValue[float | None] | None = None
+    estimated_call_cost_usd: ProvenanceValue[float | None] | None = None
+    actual_calculated_cost_usd: ProvenanceValue[float | None] | None = None
     estimated_quality: float | None = None
     validated_correctness: bool = True
     empirical_quality: float | None = None

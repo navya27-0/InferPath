@@ -84,7 +84,7 @@ class RespondResponse(BaseModel):
     fallback_used: bool
     needs_clarification: bool = False
     clarification_prompt: str | None = None
-    cost_usd: float
+    cost_usd: float | None = None
     cost_provenance: str
     latency_ms: float
     latency_provenance: str
@@ -773,7 +773,8 @@ def create_app(
             span.set_attribute("inferpath.route", result.final_tier.value)
             span.set_attribute("inferpath.rule_id", result.rule_id or "none")
             span.set_attribute("inferpath.cache_hit", result.was_cached)
-            span.set_attribute("inferpath.cost_usd", result.cost_usd.value)
+            if result.cost_usd.value is not None:
+                span.set_attribute("inferpath.cost_usd", result.cost_usd.value)
             span.set_attribute("inferpath.latency_ms", result.total_latency_ms.value)
             span.set_attribute("inferpath.fallback_used", result.fallback_occurred)
 

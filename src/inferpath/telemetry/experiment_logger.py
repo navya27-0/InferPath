@@ -23,11 +23,11 @@ class ExperimentRecord(BaseModel):
     cache_status: str = "miss"  # "hit", "miss", "bypassed_private", "bypassed_time_sensitive", "bypassed_deterministic"
     latency_ms: float
     latency_provenance: ProvenanceLabel
-    input_tokens: int
+    input_tokens: int | None = None
     input_tokens_provenance: ProvenanceLabel
-    output_tokens: int
+    output_tokens: int | None = None
     output_tokens_provenance: ProvenanceLabel
-    cost_usd: float
+    cost_usd: float | None = None
     cost_provenance: ProvenanceLabel
     energy_wh_estimated: dict[str, float] | None = None
     energy_provenance: ProvenanceLabel | None = None

@@ -30,37 +30,74 @@ class CostAccumulator:
     Prevents understating total request cost when a small-model request fails validation and escalates.
     """
 
-    total_cost_usd: float = 0.0
-    total_input_tokens: int = 0
-    total_output_tokens: int = 0
+    total_cost_usd: float | None = 0.0
+    cost_available: bool = True
+    total_input_tokens: int | None = 0
+    total_output_tokens: int | None = 0
+    tokens_available: bool = True
     provider_reported_cost_usd: float | None = None
     call_records: list[dict[str, Any]] = field(default_factory=list)
 
     def record_call(self, tier: RouteTier, output: HandlerOutput) -> None:
         """Records resource consumption from an individual tier execution attempt."""
-        cost = 0.0
-        if output.raw_response and "cost_usd_calculated" in output.raw_response:
-            cost = float(output.raw_response["cost_usd_calculated"])
+        cost: float | None = None
+        has_cost_entry = False
 
-        self.total_cost_usd += cost
-        if output.input_tokens and output.input_tokens.value is not None:
-            self.total_input_tokens += output.input_tokens.value
-        if output.output_tokens and output.output_tokens.value is not None:
-            self.total_output_tokens += output.output_tokens.value
+        if output.raw_response and "cost_usd_calculated" in output.raw_response:
+            raw_c = output.raw_response["cost_usd_calculated"]
+            has_cost_entry = True
+            if raw_c is not None:
+                try:
+                    cost = float(raw_c)
+                except (ValueError, TypeError):
+                    cost = None
+            else:
+                cost = None
+        elif tier in (RouteTier.DETERMINISTIC_A, RouteTier.TEMPLATE_B):
+            cost = 0.0
+            has_cost_entry = True
+
+        # Accumulate total cost if cost is available
+        if cost is not None and self.cost_available:
+            self.total_cost_usd = (self.total_cost_usd or 0.0) + cost
+        elif tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D) and (
+            cost is None or not has_cost_entry
+        ):
+            self.cost_available = False
+            self.total_cost_usd = None
+
+        # Token accumulation
+        in_tok = output.input_tokens.value if output.input_tokens else None
+        out_tok = output.output_tokens.value if output.output_tokens else None
+        if in_tok is not None and self.tokens_available:
+            self.total_input_tokens = (self.total_input_tokens or 0) + in_tok
+        elif tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D) and in_tok is None:
+            self.tokens_available = False
+            self.total_input_tokens = None
+
+        if out_tok is not None and self.tokens_available:
+            self.total_output_tokens = (self.total_output_tokens or 0) + out_tok
+        elif tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D) and out_tok is None:
+            self.tokens_available = False
+            self.total_output_tokens = None
 
         if (
             output.raw_response
             and output.raw_response.get("provider_reported_cost_usd") is not None
         ):
-            p_cost = float(output.raw_response["provider_reported_cost_usd"])
-            self.provider_reported_cost_usd = (self.provider_reported_cost_usd or 0.0) + p_cost
+            try:
+                p_cost = float(output.raw_response["provider_reported_cost_usd"])
+                self.provider_reported_cost_usd = (self.provider_reported_cost_usd or 0.0) + p_cost
+            except (ValueError, TypeError):
+                pass
 
         self.call_records.append(
             {
                 "tier": tier,
                 "cost_usd": cost,
-                "input_tokens": output.input_tokens.value if output.input_tokens else None,
-                "output_tokens": output.output_tokens.value if output.output_tokens else None,
+                "cost_available": cost is not None,
+                "input_tokens": in_tok,
+                "output_tokens": out_tok,
                 "latency_ms": output.latency_ms.value if output.latency_ms else 0.0,
                 "model_version": output.model_version,
             }
@@ -198,8 +235,26 @@ class ResultFinalizer:
             total_input_tokens = cost_accumulator.total_input_tokens
             total_output_tokens = cost_accumulator.total_output_tokens
 
-            # Aggregate environmental footprint across all actual model calls
-            if len(cost_accumulator.call_records) == 1:
+            # Check if any model tier had missing tokens
+            model_tokens_missing = any(
+                rec["tier"] in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D)
+                and (rec["input_tokens"] is None or rec["output_tokens"] is None)
+                for rec in cost_accumulator.call_records
+            )
+            if model_tokens_missing:
+                final_energy = ProvenanceValue(
+                    value=None,
+                    provenance=ProvenanceLabel.UNAVAILABLE,
+                    unit="Wh",
+                    system_boundary=self.estimator.energy_boundary,
+                )
+                final_water = ProvenanceValue(
+                    value=None,
+                    provenance=ProvenanceLabel.UNAVAILABLE,
+                    unit="mL",
+                    system_boundary=self.estimator.total_water_boundary,
+                )
+            elif len(cost_accumulator.call_records) == 1:
                 rec = cost_accumulator.call_records[0]
                 call_tokens = (rec["input_tokens"] or 0) + (rec["output_tokens"] or 0)
                 est = self.estimator.estimate(
@@ -244,11 +299,31 @@ class ResultFinalizer:
                 and output.raw_response
                 and "cost_usd_calculated" in output.raw_response
             ):
-                total_cost_usd = float(output.raw_response["cost_usd_calculated"])
-                if output.raw_response.get("provider_reported_cost_usd") is not None:
+                raw_c = output.raw_response["cost_usd_calculated"]
+                if raw_c is not None:
+                    try:
+                        total_cost_usd = float(raw_c)
+                    except (ValueError, TypeError):
+                        total_cost_usd = None
+                else:
+                    total_cost_usd = None
+            elif not was_cached and output.tier in (
+                RouteTier.SMALL_MODEL_C,
+                RouteTier.LARGE_MODEL_D,
+            ):
+                total_cost_usd = None
+
+            if (
+                not was_cached
+                and output.raw_response
+                and output.raw_response.get("provider_reported_cost_usd") is not None
+            ):
+                try:
                     provider_reported_cost = float(
                         output.raw_response["provider_reported_cost_usd"]
                     )
+                except (ValueError, TypeError):
+                    provider_reported_cost = None
 
             total_input_tokens = (
                 output.input_tokens.value
@@ -297,7 +372,11 @@ class ResultFinalizer:
         # Evaluate actual post-execution constraints
         actual_constraints_satisfied = decision.constraints_satisfied
         unsatisfied_actual = list(decision.unsatisfied_constraints)
-        if request.maximum_cost_usd is not None and total_cost_usd > request.maximum_cost_usd:
+        if (
+            request.maximum_cost_usd is not None
+            and total_cost_usd is not None
+            and total_cost_usd > request.maximum_cost_usd
+        ):
             actual_constraints_satisfied = False
             if "budget" not in unsatisfied_actual:
                 unsatisfied_actual.append("budget")
@@ -312,6 +391,13 @@ class ResultFinalizer:
 
         prior = DEFAULT_TIER_PRIORS.get(final_tier)
         est_qual = prior.quality_prior if prior else None
+
+        cost_val = round(total_cost_usd, 6) if total_cost_usd is not None else None
+        cost_prov = (
+            ProvenanceLabel.CALCULATED
+            if total_cost_usd is not None
+            else ProvenanceLabel.UNAVAILABLE
+        )
 
         return PipelineResult(
             request_id=request.request_id,
@@ -333,8 +419,8 @@ class ResultFinalizer:
                 unit="ms",
             ),
             cost_usd=ProvenanceValue(
-                value=round(total_cost_usd, 6),
-                provenance=ProvenanceLabel.CALCULATED,
+                value=cost_val,
+                provenance=cost_prov,
                 unit="USD",
             ),
             energy_wh=final_energy,
@@ -366,17 +452,30 @@ class ResultFinalizer:
             if provider_reported_cost is not None
             else None,
             estimated_call_cost_usd=ProvenanceValue(
-                value=round(
-                    float(output.raw_response.get("estimated_call_cost_usd", total_cost_usd)), 6
-                ),
-                provenance=ProvenanceLabel.CALCULATED,
+                value=round(float(output.raw_response["estimated_call_cost_usd"]), 6)
+                if (
+                    output.raw_response
+                    and output.raw_response.get("estimated_call_cost_usd") is not None
+                )
+                else cost_val,
+                provenance=ProvenanceLabel.CALCULATED
+                if (
+                    output.raw_response
+                    and output.raw_response.get("estimated_call_cost_usd") is not None
+                )
+                or cost_val is not None
+                else ProvenanceLabel.UNAVAILABLE,
                 unit="USD",
             )
-            if output.raw_response and "estimated_call_cost_usd" in output.raw_response
+            if (
+                output.raw_response
+                and output.raw_response.get("estimated_call_cost_usd") is not None
+            )
+            or cost_val is not None
             else None,
             actual_calculated_cost_usd=ProvenanceValue(
-                value=round(total_cost_usd, 6),
-                provenance=ProvenanceLabel.CALCULATED,
+                value=cost_val,
+                provenance=cost_prov,
                 unit="USD",
             ),
             constraints_satisfied=actual_constraints_satisfied,

@@ -323,3 +323,78 @@ def test_zero_latency_constraint_is_evaluated_and_fails_fast(constraint_pipeline
     assert "latency" in exc_legacy.value.unsatisfied_constraints or "latency" in str(
         exc_legacy.value
     )
+
+
+def test_deterministic_and_template_routes_reject_infeasible_latency_constraints(
+    constraint_pipeline,
+):
+    """Local deterministic and template routes must not bypass caller latency constraints."""
+    # 1. Arithmetic with zero latency
+    req_math_zero = UserRequest(
+        request_id="req_math_zero",
+        prompt="125 * 8",
+        task_parameters=TaskParameters(maximum_latency_ms=0.0),
+    )
+    with pytest.raises(ConstraintsUnsatisfiableError) as exc_math_zero:
+        constraint_pipeline.execute(req_math_zero)
+    assert "latency" in exc_math_zero.value.unsatisfied_constraints or "latency" in str(
+        exc_math_zero.value
+    )
+
+    # 2. Arithmetic with below-estimate latency (0.5ms < 1.5ms prior)
+    req_math_sub = UserRequest(
+        request_id="req_math_sub",
+        prompt="125 * 8",
+        task_parameters=TaskParameters(maximum_latency_ms=0.5),
+    )
+    with pytest.raises(ConstraintsUnsatisfiableError) as exc_math_sub:
+        constraint_pipeline.execute(req_math_sub)
+    assert "latency" in exc_math_sub.value.unsatisfied_constraints or "latency" in str(
+        exc_math_sub.value
+    )
+
+    # 3. Unit conversion with zero latency
+    req_conv_zero = UserRequest(
+        request_id="req_conv_zero",
+        prompt="Convert 100 meters to feet",
+        task_parameters=TaskParameters(maximum_latency_ms=0.0),
+    )
+    with pytest.raises(ConstraintsUnsatisfiableError) as exc_conv:
+        constraint_pipeline.execute(req_conv_zero)
+    assert "latency" in exc_conv.value.unsatisfied_constraints or "latency" in str(exc_conv.value)
+
+    # 4. Template route with below-estimate latency (1.0ms < 2.5ms prior)
+    req_tmpl_sub = UserRequest(
+        request_id="req_tmpl_sub",
+        prompt="Generate standard user profile greeting for Alice with role Admin",
+        task_parameters=TaskParameters(maximum_latency_ms=1.0),
+    )
+    with pytest.raises(ConstraintsUnsatisfiableError) as exc_tmpl:
+        constraint_pipeline.execute(req_tmpl_sub)
+    assert "latency" in exc_tmpl.value.unsatisfied_constraints or "latency" in str(exc_tmpl.value)
+
+    # 5. Deterministic route with feasible latency limit must succeed
+    req_math_feasible = UserRequest(
+        request_id="req_math_ok",
+        prompt="125 * 8",
+        task_parameters=TaskParameters(maximum_latency_ms=50.0),
+    )
+    res_ok = constraint_pipeline.execute(req_math_feasible)
+    assert res_ok.final_tier == RouteTier.DETERMINISTIC_A
+    assert res_ok.validation_passed is True
+    assert res_ok.final_output.strip() == "1000"
+
+
+@pytest.mark.asyncio
+async def test_async_deterministic_routes_reject_infeasible_latency_constraints(
+    constraint_pipeline,
+):
+    """Async execution of local deterministic routes must fail fast on unsatisfiable latency limits."""
+    req_async_zero = UserRequest(
+        request_id="req_async_zero",
+        prompt="25 + 75",
+        task_parameters=TaskParameters(maximum_latency_ms=0.0),
+    )
+    with pytest.raises(ConstraintsUnsatisfiableError) as exc_async:
+        await constraint_pipeline.execute_async(req_async_zero)
+    assert "latency" in exc_async.value.unsatisfied_constraints or "latency" in str(exc_async.value)

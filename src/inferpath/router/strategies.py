@@ -27,6 +27,7 @@ from inferpath.handlers.unit_converter import UnitConverter
 from inferpath.models.domain import HandlerOutput, RoutingDecision, UserRequest
 from inferpath.models.enums import PrivacyClass, RouteTier
 from inferpath.router.analyzer import RequestAnalysis, RequestAnalyzer, contains_sensitive_patterns
+from inferpath.router.formulation import DEFAULT_TIER_PRIORS
 from inferpath.security.budget import UnknownModelPricingError
 from inferpath.security.hashing import hash_prompt
 from inferpath.security.privacy import PrivacyPolicyEnforcer, PrivacyViolationError
@@ -288,58 +289,113 @@ class ConstraintAwareRouter(BaseRouter):
         # -------------------------------------------------------------
         # 1. Candidate Generation & Local Deterministic / Template check
         # -------------------------------------------------------------
+        lat_a = DEFAULT_TIER_PRIORS[RouteTier.DETERMINISTIC_A].estimated_latency_ms
+        qual_a = 1.0  # Exact deterministic solver when rule matches
+        cost_a = 0.0
+
+        lat_b = DEFAULT_TIER_PRIORS[RouteTier.TEMPLATE_B].estimated_latency_ms
+        qual_b = 1.0  # Exact template output when fields present
+        cost_b = 0.0
+
+        def _evaluate_local_tier_decision(
+            tier: RouteTier,
+            rule_id: str,
+            est_lat: float,
+            est_cost: float,
+            est_qual: float,
+            success_reason: str,
+            **extra_kwargs: Any,
+        ) -> RoutingDecision:
+            unsatisfied = []
+            if l_max is not None and est_lat > l_max:
+                unsatisfied.append("latency")
+            if b_max is not None and est_cost > b_max:
+                unsatisfied.append("budget")
+            if q_min is not None and est_qual < q_min:
+                unsatisfied.append("quality")
+
+            if unsatisfied:
+                l_str = f"{l_max:.1f}ms" if l_max is not None else "None"
+                b_str = f"${b_max:.6f}" if b_max is not None else "None"
+                reason = (
+                    f"Constraints unsatisfiable: local {tier.value} handler estimated latency "
+                    f"({est_lat:.1f}ms) exceeds requested maximum latency ({l_str})."
+                    if "latency" in unsatisfied
+                    else f"Constraints unsatisfiable: local {tier.value} handler cannot satisfy caller constraints (unsatisfied: {', '.join(unsatisfied)}; Q_min={q_min}, B_max={b_str}, L_max={l_str})."
+                )
+                decision = RoutingDecision(
+                    selected_tier=tier,
+                    eligible_tiers=[],
+                    rule_id="CONSTRAINTS_UNSATISFIABLE",
+                    confidence=0.0,
+                    reason=reason,
+                    time_sensitive=False,
+                    cache_eligible=False,
+                    constraints_satisfied=False,
+                    unsatisfied_constraints=unsatisfied,
+                )
+                self._log_decision_safely(request, decision)
+                return decision
+
+            decision = RoutingDecision(
+                selected_tier=tier,
+                eligible_tiers=[tier],
+                rule_id=rule_id,
+                confidence=1.0 if tier == RouteTier.DETERMINISTIC_A else 0.98,
+                reason=success_reason,
+                time_sensitive=False,
+                cache_eligible=extra_kwargs.get("cache_eligible", False),
+                constraints_satisfied=True,
+                unsatisfied_constraints=[],
+                **{k: v for k, v in extra_kwargs.items() if k != "cache_eligible"},
+            )
+            self._log_decision_safely(request, decision)
+            return decision
+
         # Tier A: Deterministic handlers
         if analysis.task_intent == "arithmetic":
-            decision = RoutingDecision(
-                selected_tier=RouteTier.DETERMINISTIC_A,
-                eligible_tiers=[RouteTier.DETERMINISTIC_A],
-                rule_id="R03",
-                confidence=1.0,
-                reason="Constraint-aware optimization: Tier A satisfies Q_min=1.0 at zero cost.",
-                time_sensitive=False,
+            return _evaluate_local_tier_decision(
+                RouteTier.DETERMINISTIC_A,
+                "R03",
+                lat_a,
+                cost_a,
+                qual_a,
+                "Constraint-aware optimization: Tier A satisfies Q_min=1.0 at zero cost.",
                 cache_eligible=False,
             )
-            self._log_decision_safely(request, decision)
-            return decision
 
         if analysis.task_intent == "unit_conversion":
-            decision = RoutingDecision(
-                selected_tier=RouteTier.DETERMINISTIC_A,
-                eligible_tiers=[RouteTier.DETERMINISTIC_A],
-                rule_id="R04",
-                confidence=1.0,
-                reason="Constraint-aware optimization: Tier A satisfies Q_min=1.0 at zero cost.",
-                time_sensitive=False,
+            return _evaluate_local_tier_decision(
+                RouteTier.DETERMINISTIC_A,
+                "R04",
+                lat_a,
+                cost_a,
+                qual_a,
+                "Constraint-aware optimization: Tier A satisfies Q_min=1.0 at zero cost.",
                 cache_eligible=False,
             )
-            self._log_decision_safely(request, decision)
-            return decision
 
         if analysis.task_intent == "date_formatting":
-            decision = RoutingDecision(
-                selected_tier=RouteTier.DETERMINISTIC_A,
-                eligible_tiers=[RouteTier.DETERMINISTIC_A],
-                rule_id="R05",
-                confidence=1.0,
-                reason="Constraint-aware optimization: Tier A satisfies Q_min=1.0 at zero cost.",
-                time_sensitive=False,
+            return _evaluate_local_tier_decision(
+                RouteTier.DETERMINISTIC_A,
+                "R05",
+                lat_a,
+                cost_a,
+                qual_a,
+                "Constraint-aware optimization: Tier A satisfies Q_min=1.0 at zero cost.",
                 cache_eligible=False,
             )
-            self._log_decision_safely(request, decision)
-            return decision
 
         if analysis.task_intent == "json_validation":
-            decision = RoutingDecision(
-                selected_tier=RouteTier.DETERMINISTIC_A,
-                eligible_tiers=[RouteTier.DETERMINISTIC_A],
-                rule_id="R06",
-                confidence=1.0,
-                reason="Constraint-aware optimization: Tier A satisfies Q_min=1.0 at zero cost.",
-                time_sensitive=False,
+            return _evaluate_local_tier_decision(
+                RouteTier.DETERMINISTIC_A,
+                "R06",
+                lat_a,
+                cost_a,
+                qual_a,
+                "Constraint-aware optimization: Tier A satisfies Q_min=1.0 at zero cost.",
                 cache_eligible=False,
             )
-            self._log_decision_safely(request, decision)
-            return decision
 
         # Tier B: Template Generation
         if analysis.template_id:
@@ -350,25 +406,23 @@ class ConstraintAwareRouter(BaseRouter):
                 if needs_clarif
                 else None
             )
-            decision = RoutingDecision(
-                selected_tier=RouteTier.TEMPLATE_B,
-                eligible_tiers=[RouteTier.TEMPLATE_B],
-                rule_id="R07",
-                confidence=0.98,
-                reason=(
+            return _evaluate_local_tier_decision(
+                RouteTier.TEMPLATE_B,
+                "R07",
+                lat_b,
+                cost_b,
+                qual_b,
+                (
                     f"Template '{analysis.template_id}' matched; clarification required for: {', '.join(analysis.missing_inputs)}"
                     if needs_clarif
                     else f"Constraint-aware optimization: Structured Jinja2 template '{analysis.template_id}' satisfies Q=1.0 at zero cost."
                 ),
                 template_id=analysis.template_id,
-                time_sensitive=False,
                 cache_eligible=not needs_clarif and analysis.privacy_class == PrivacyClass.PUBLIC,
                 needs_clarification=needs_clarif,
                 clarification_prompt=clarif_prompt,
                 missing_fields=analysis.missing_inputs,
             )
-            self._log_decision_safely(request, decision)
-            return decision
 
         # -------------------------------------------------------------
         # 2. Privacy Policy Guardrail Enforcement (R01)

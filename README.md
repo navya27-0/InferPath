@@ -141,7 +141,7 @@ curl -s -X POST http://127.0.0.1:8000/v1/respond \
   -d '{"prompt": "Convert 100 meters to feet", "privacy_class": "public"}' | jq
 ```
 
-> **Default Safety Invariant**: Without an explicit `OPENROUTER_API_KEY` set in `.env`, InferPath automatically initializes deterministic `MockSmallModel` and `MockLargeModel` adapters. No paid network requests can occur inadvertently.
+> **Default Safety Invariant**: In `local-demo` and `benchmark-offline` profiles, InferPath automatically initializes deterministic `MockSmallModel` and `MockLargeModel` adapters so no paid network requests occur inadvertently. In `staging`, real provider mode is attempted but allows mock fallback when `OPENROUTER_API_KEY` is unset. In `production`, real adapter mode is strictly enforced without mock fallback (`allow_mock_fallback=False`), requiring a valid `OPENROUTER_API_KEY` to fail fast during startup and prevent unconfigured or silent mock executions in live production.
 
 ### Deployment Profiles & Configuration Matrix
 
@@ -149,9 +149,9 @@ InferPath supports standardized deployment profiles configured via `INFERPATH_DE
 
 | Profile | Primary Purpose | Authentication | Adapter Mode | Default Bind Host | Rate Limit |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `local-demo` (alias `development`) | Local testing & dev | Disabled by default | `simulated` (Mock) | `127.0.0.1` | 120 RPM |
-| `staging` | Pre-production staging | Mandatory `INFERPATH_API_KEY` | `simulated` (Mock) | `127.0.0.1` | 300 RPM |
-| `production` | Live deployment | Mandatory `INFERPATH_API_KEY` | `real` (OpenRouter) | `0.0.0.0` | 600 RPM |
+| `local-demo` (alias `development`) | Local testing & dev | Disabled by default | `simulated` (Mock) | `127.0.0.1` | 60 RPM |
+| `staging` | Pre-production staging | Mandatory `INFERPATH_API_KEY` | `real` (with mock fallback) | `0.0.0.0` | 120 RPM |
+| `production` | Live deployment | Mandatory `INFERPATH_API_KEY` | `real` (OpenRouter, no mock fallback) | `0.0.0.0` | 240 RPM |
 | `benchmark-offline` (alias `evaluation`) | Hermetic reproduction | Disabled | `simulated` (Mock) | `127.0.0.1` | 10,000 RPM |
 
 **Key Configuration Variables**:

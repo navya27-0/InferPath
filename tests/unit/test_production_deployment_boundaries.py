@@ -129,24 +129,38 @@ def test_secret_manager_hierarchy_and_masking(tmp_path: Path):
 
 
 def test_deployment_profiles():
-    """Verify canonical deployment profiles have appropriate operational guardrails."""
+    """Verify canonical deployment profiles have appropriate operational guardrails matching documentation."""
     local_cfg = get_deployment_profile("local-demo")
     assert local_cfg.name == ProfileName.LOCAL_DEMO
     assert local_cfg.require_api_key is False
     assert local_cfg.default_bind_host == "127.0.0.1"
-
-    prod_cfg = get_deployment_profile("production")
-    assert prod_cfg.name == ProfileName.PRODUCTION
-    assert prod_cfg.require_api_key is True
-    assert prod_cfg.adapter_mode == "real"
+    assert local_cfg.rate_limit_rpm == 60
+    assert local_cfg.adapter_mode == "simulated"
+    assert local_cfg.allow_mock_fallback is True
 
     staging_cfg = get_deployment_profile("staging")
     assert staging_cfg.name == ProfileName.STAGING
     assert staging_cfg.require_api_key is True
+    assert staging_cfg.default_bind_host == "0.0.0.0"
+    assert staging_cfg.rate_limit_rpm == 120
+    assert staging_cfg.adapter_mode == "real"
+    assert staging_cfg.allow_mock_fallback is True
+
+    prod_cfg = get_deployment_profile("production")
+    assert prod_cfg.name == ProfileName.PRODUCTION
+    assert prod_cfg.require_api_key is True
+    assert prod_cfg.default_bind_host == "0.0.0.0"
+    assert prod_cfg.rate_limit_rpm == 240
+    assert prod_cfg.adapter_mode == "real"
+    assert prod_cfg.allow_mock_fallback is False
 
     offline_cfg = get_deployment_profile("benchmark-offline")
     assert offline_cfg.name == ProfileName.BENCHMARK_OFFLINE
+    assert offline_cfg.require_api_key is False
+    assert offline_cfg.default_bind_host == "127.0.0.1"
     assert offline_cfg.rate_limit_rpm == 10000
+    assert offline_cfg.adapter_mode == "simulated"
+    assert offline_cfg.allow_mock_fallback is True
 
 
 def test_api_tracing_headers_in_response():

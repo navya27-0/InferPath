@@ -249,6 +249,50 @@ class RequestPipeline:
         q_min = request.minimum_quality
         b_max = request.maximum_cost_usd
         l_max = request.maximum_latency_ms
+
+        # Pre-dispatch hard constraint enforcement for local deterministic and template tiers
+        if decision.selected_tier in (RouteTier.DETERMINISTIC_A, RouteTier.TEMPLATE_B):
+            local_prior = self.constrained_policy.priors.get(decision.selected_tier)
+            if local_prior:
+                tier_infeasible = False
+                unsatisfied = []
+                if l_max is not None and local_prior.estimated_latency_ms > l_max:
+                    tier_infeasible = True
+                    unsatisfied.append("latency")
+                if (
+                    b_max is not None
+                    and (local_prior.estimated_cost_per_1k * (50 / 1000.0)) > b_max
+                ):
+                    tier_infeasible = True
+                    unsatisfied.append("budget")
+                if q_min is not None and local_prior.quality_prior < q_min:
+                    tier_infeasible = True
+                    unsatisfied.append("quality")
+
+                if tier_infeasible:
+                    b_str = f"${b_max:.6f}" if b_max is not None else "None"
+                    l_str = f"{l_max:.1f}ms" if l_max is not None else "None"
+                    reason = (
+                        f"Constraints unsatisfiable: selected local tier {decision.selected_tier.value} "
+                        f"estimated latency ({local_prior.estimated_latency_ms:.1f}ms) exceeds requested maximum latency ({l_str})."
+                        if "latency" in unsatisfied
+                        else f"Constraints unsatisfiable: selected local tier {decision.selected_tier.value} cannot satisfy caller constraints (unsatisfied: {', '.join(unsatisfied)}; Q_min={q_min}, B_max={b_str}, L_max={l_str})."
+                    )
+                    route_trace.append(
+                        {
+                            "step": "constraint_check",
+                            "status": "unsatisfiable",
+                            "eligible_tiers": [],
+                            "unsatisfied_constraints": unsatisfied,
+                            "reason": reason,
+                        }
+                    )
+                    raise ConstraintsUnsatisfiableError(
+                        message=reason,
+                        unsatisfied_constraints=unsatisfied,
+                        eligible_tiers=[],
+                    )
+
         if decision.selected_tier in (RouteTier.SMALL_MODEL_C, RouteTier.LARGE_MODEL_D):
             feasible = self.constrained_policy.determine_feasible_set(request)
             if not feasible:

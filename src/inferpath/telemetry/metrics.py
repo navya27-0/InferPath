@@ -37,7 +37,7 @@ class MetricsCollector:
         tier: str,
         status: str,
         latency_ms: float,
-        cost_usd: float = 0.0,
+        cost_usd: float | None = 0.0,
         was_cached: bool = False,
         fallback_used: bool = False,
     ) -> None:
@@ -51,7 +51,8 @@ class MetricsCollector:
                 if latency_ms <= bucket:
                     self.latency_histogram[bucket] += 1
 
-            self.cost_usd_total += cost_usd
+            if cost_usd is not None:
+                self.cost_usd_total += cost_usd
 
             if was_cached:
                 self.cache_hits_total += 1
